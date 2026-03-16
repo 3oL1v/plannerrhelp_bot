@@ -188,6 +188,17 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
         await ensure_message_user(message)
         await message.answer(help_text(settings.effective_webapp_url))
 
+    @router.message(F.text == "Открыть планировщик")
+    async def open_planner_handler(message: Message) -> None:
+        await ensure_message_user(message)
+        if settings.effective_webapp_url and settings.effective_webapp_url.startswith("https://"):
+            await message.answer(f"Открой Mini App: {settings.effective_webapp_url}")
+            return
+        await message.answer(
+            "Локально Mini App доступен как сайт: http://127.0.0.1:8000\n"
+            "Внутри Telegram Mini App открывается только по https."
+        )
+
     @router.callback_query(F.data == "add:task")
     async def add_task_callback(callback: CallbackQuery, state: FSMContext) -> None:
         await state.set_state(PlannerStates.waiting_for_task)
