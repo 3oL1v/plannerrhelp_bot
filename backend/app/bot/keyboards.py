@@ -6,7 +6,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 def main_menu_keyboard(webapp_url: str | None) -> ReplyKeyboardMarkup:
     planner_button = [KeyboardButton(text="Открыть планировщик")]
-    if webapp_url:
+    if webapp_url and webapp_url.startswith("https://"):
         planner_button = [KeyboardButton(text="Открыть планировщик", web_app=WebAppInfo(url=webapp_url))]
     rows = [
         [KeyboardButton(text="Сегодня"), KeyboardButton(text="+")],
