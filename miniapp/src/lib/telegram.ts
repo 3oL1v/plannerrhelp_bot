@@ -10,9 +10,9 @@ export function getBootstrapPayload() {
 
   return {
     init_data: webApp?.initData || null,
-    telegram_id: unsafeUser?.id ?? 1,
-    username: unsafeUser?.username ?? "local_dev",
-    first_name: unsafeUser?.first_name ?? "Local",
-    last_name: unsafeUser?.last_name ?? "User"
+    telegram_id: unsafeUser?.id ?? null,
+    username: unsafeUser?.username ?? null,
+    first_name: unsafeUser?.first_name ?? null,
+    last_name: unsafeUser?.last_name ?? null
   };
 }

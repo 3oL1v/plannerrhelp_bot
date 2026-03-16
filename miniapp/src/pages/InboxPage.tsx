@@ -1,8 +1,9 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { addInbox, convertInboxToEvent, convertInboxToTask, deleteInbox, getInbox } from "../api/planner";
 import type { InboxItem } from "../api/types";
 import { EmptyState, ErrorState, LoadingState } from "../components/States";
+import { usePageRefresh } from "../hooks/usePageRefresh";
 
 export function InboxPage() {
   const [items, setItems] = useState<InboxItem[]>([]);
@@ -10,26 +11,34 @@ export function InboxPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async (withLoading = false) => {
+    if (withLoading) {
+      setLoading(true);
+    }
     try {
       setItems(await getInbox());
+      setError(null);
     } catch (err) {
       setError((err as Error).message);
     } finally {
-      setLoading(false);
+      if (withLoading) {
+        setLoading(false);
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
-    load();
-  }, []);
+    void load(true);
+  }, [load]);
+
+  usePageRefresh(() => load(false), 5000);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (!text.trim()) return;
     await addInbox(text.trim());
     setText("");
-    await load();
+    await load(false);
   }
 
   if (loading) return <LoadingState />;
@@ -51,9 +60,9 @@ export function InboxPage() {
           <article key={item.id} className="card">
             <p>{item.text}</p>
             <div className="actions">
-              <button onClick={() => convertInboxToTask(item.id).then(load)}>В задачу</button>
-              <button onClick={() => convertInboxToEvent(item.id).then(load)}>В событие</button>
-              <button className="ghost" onClick={() => deleteInbox(item.id).then(load)}>
+              <button onClick={() => convertInboxToTask(item.id).then(() => load(false))}>В задачу</button>
+              <button onClick={() => convertInboxToEvent(item.id).then(() => load(false))}>В событие</button>
+              <button className="ghost" onClick={() => deleteInbox(item.id).then(() => load(false))}>
                 Удалить
               </button>
             </div>

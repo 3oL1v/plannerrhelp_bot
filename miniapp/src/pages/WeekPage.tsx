@@ -1,21 +1,37 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { getWeekDashboard } from "../api/planner";
 import type { WeekDashboard } from "../api/types";
 import { ErrorState, LoadingState } from "../components/States";
+import { usePageRefresh } from "../hooks/usePageRefresh";
 
 export function WeekPage() {
   const [data, setData] = useState<WeekDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    getWeekDashboard()
-      .then(setData)
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
+  const load = useCallback(async (withLoading = false) => {
+    if (withLoading) {
+      setLoading(true);
+    }
+    try {
+      setData(await getWeekDashboard());
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      if (withLoading) {
+        setLoading(false);
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    void load(true);
+  }, [load]);
+
+  usePageRefresh(() => load(false), 7000);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} />;

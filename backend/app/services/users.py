@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -15,6 +15,25 @@ async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> Us
 
 async def get_user_by_id(session: AsyncSession, user_id: int) -> User | None:
     result = await session.execute(select(User).where(User.id == user_id))
+    return result.scalar_one_or_none()
+
+
+async def get_latest_seen_user(session: AsyncSession) -> User | None:
+    result = await session.execute(
+        select(User)
+        .order_by(User.last_seen_at.is_(None), desc(User.last_seen_at), desc(User.created_at))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_latest_real_user(session: AsyncSession, bot_telegram_id: int | None) -> User | None:
+    query = select(User).where(User.telegram_id != 1)
+    if bot_telegram_id is not None:
+        query = query.where(User.telegram_id != bot_telegram_id)
+    result = await session.execute(
+        query.order_by(User.last_seen_at.is_(None), desc(User.last_seen_at), desc(User.created_at)).limit(1)
+    )
     return result.scalar_one_or_none()
 
 

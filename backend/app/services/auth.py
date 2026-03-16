@@ -4,7 +4,7 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.services.users import ensure_user, get_user_by_id
+from app.services.users import ensure_user, get_latest_real_user, get_user_by_id
 from app.utils.telegram import validate_init_data
 
 
@@ -47,6 +47,17 @@ async def bootstrap_telegram_user(
         last_name = telegram_user.get("last_name")
 
     if telegram_id is None:
+        if settings.environment.lower() == "development":
+            bot_telegram_id = None
+            if settings.telegram_bot_token:
+                try:
+                    bot_telegram_id = int(settings.telegram_bot_token.split(":", 1)[0])
+                except ValueError:
+                    bot_telegram_id = None
+            latest_user = await get_latest_real_user(session, bot_telegram_id)
+            if latest_user is None:
+                raise AuthError("No Telegram users found yet. Send /start to the bot first.")
+            return latest_user, issue_token(settings, latest_user.id)
         raise AuthError("telegram_id is required")
 
     user = await ensure_user(session, settings, telegram_id, username, first_name, last_name)
