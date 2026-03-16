@@ -18,9 +18,9 @@ Telegram planner MVP in a single repository:
 
 1. Create `.env` from `.env.example`.
 2. Set at least:
-   - `DATABASE_URL`
    - `TELEGRAM_BOT_TOKEN`
    - `APP_SECRET`
+   - optional `DATABASE_URL` only if you want Postgres locally
 3. Backend:
 
 ```bash
@@ -41,6 +41,7 @@ npm run build
 ```
 
 The backend serves the built app from `backend/app/static`. For local Telegram bot testing, keep `TELEGRAM_USE_POLLING=true`.
+If `DATABASE_URL` is not set, the app uses the local SQLite file in `backend/planner_local.db`.
 
 ## Railway
 
@@ -48,16 +49,27 @@ The backend serves the built app from `backend/app/static`. For local Telegram b
 2. Add a Railway PostgreSQL plugin.
 3. Set env vars:
    - `ENVIRONMENT=production`
-   - `APP_SECRET`
+   - `APP_SECRET=<long random string>`
    - `APP_BASE_URL=https://<your-service>.up.railway.app`
    - `WEBAPP_URL=https://<your-service>.up.railway.app`
-   - `DATABASE_URL=${{Postgres.DATABASE_URL}}`
+   - `DATABASE_URL=<raw Railway Postgres DATABASE_URL>`
    - `TELEGRAM_BOT_TOKEN`
-   - `TELEGRAM_WEBHOOK_SECRET`
+   - `TELEGRAM_WEBHOOK_SECRET=<random secret>`
    - `ENABLE_SCHEDULER=true`
    - `TELEGRAM_USE_POLLING=false`
+   - `CORS_ORIGINS=["https://<your-service>.up.railway.app"]`
 4. Deploy. The Dockerfile runs `alembic upgrade head` before `uvicorn`.
-5. In Telegram BotFather set the Mini App URL to your Railway domain. On startup the app registers its webhook automatically.
+5. On startup in production the app:
+   - registers the Telegram webhook
+   - sets the chat menu button to the Mini App `WEBAPP_URL`
+   - registers `/start` for private chats
+6. Fallback: in BotFather you can still set the Mini App URL to the same Railway `https` domain manually.
+7. Acceptance checks:
+   - `GET /health` returns `200`
+   - `getWebhookInfo` shows the Railway webhook URL
+   - `/start` shows the planner button
+   - the planner opens inside Telegram as a Mini App, not as a regular browser tab
+   - bot-created tasks appear in the Mini App
 
 ## API summary
 

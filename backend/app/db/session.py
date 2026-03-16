@@ -6,8 +6,8 @@ from app.config import Settings
 
 
 def create_engine(settings: Settings) -> AsyncEngine:
-    connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-    return create_async_engine(settings.database_url, future=True, pool_pre_ping=True, connect_args=connect_args)
+    connect_args = {"check_same_thread": False} if settings.runtime_database_url.startswith("sqlite") else {}
+    return create_async_engine(settings.runtime_database_url, future=True, pool_pre_ping=True, connect_args=connect_args)
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

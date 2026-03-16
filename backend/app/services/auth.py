@@ -37,6 +37,9 @@ async def bootstrap_telegram_user(
     first_name: str | None,
     last_name: str | None,
 ):
+    if settings.is_production and not init_data:
+        raise AuthError("Telegram init data is required in production")
+
     if init_data and settings.telegram_bot_token:
         telegram_user = validate_init_data(init_data, settings.telegram_bot_token)
         if not telegram_user:

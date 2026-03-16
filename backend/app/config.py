@@ -46,12 +46,21 @@ class Settings(BaseSettings):
 
     @computed_field
     @property
-    def sync_database_url(self) -> str:
-        if self.database_url.startswith("postgresql+asyncpg://"):
-            return self.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
-        if self.database_url.startswith("sqlite+aiosqlite:///"):
-            return self.database_url.replace("sqlite+aiosqlite:///", "sqlite:///", 1)
+    def runtime_database_url(self) -> str:
+        if self.database_url.startswith("postgresql://"):
+            return self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
         return self.database_url
+
+    @computed_field
+    @property
+    def sync_database_url(self) -> str:
+        if self.runtime_database_url.startswith("postgresql+asyncpg://"):
+            return self.runtime_database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+        if self.runtime_database_url.startswith("sqlite+aiosqlite:///"):
+            return self.runtime_database_url.replace("sqlite+aiosqlite:///", "sqlite:///", 1)
+        if self.runtime_database_url.startswith("postgresql://"):
+            return self.runtime_database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        return self.runtime_database_url
 
     @computed_field
     @property

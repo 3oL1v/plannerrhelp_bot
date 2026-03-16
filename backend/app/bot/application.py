@@ -8,11 +8,11 @@ from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, Message, Update
+from aiogram.types import BotCommand, BotCommandScopeAllPrivateChats, CallbackQuery, MenuButtonCommands, MenuButtonWebApp, Message, Update, WebAppInfo
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.bot.formatters import help_text, render_event, render_inbox, render_settings, render_task, render_today_dashboard
@@ -87,8 +87,13 @@ class BotApplication:
         if not self.bot or not self.dispatcher:
             return
         if self.settings.is_production and self.settings.webhook_url:
-            await self.bot.set_webhook(self.settings.webhook_url)
+            await self._configure_production_bot()
+            await self.bot.set_webhook(
+                self.settings.webhook_url,
+                allowed_updates=self.dispatcher.resolve_used_update_types(),
+            )
         elif self.settings.telegram_use_polling:
+            await self._safe_delete_webhook()
             self.polling_task = asyncio.create_task(
                 self.dispatcher.start_polling(
                     self.bot,
@@ -103,8 +108,8 @@ class BotApplication:
             self.polling_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self.polling_task
-        if self.settings.is_production:
-            await self.bot.delete_webhook(drop_pending_updates=False)
+        if not self.settings.is_production:
+            await self._safe_delete_webhook()
         await self.bot.session.close()
 
     async def process_update(self, update: Update) -> None:
@@ -118,6 +123,36 @@ class BotApplication:
         try:
             await self.bot.send_message(telegram_id, text)
         except TelegramBadRequest:
+            return
+
+    async def _configure_production_bot(self) -> None:
+        if not self.bot:
+            return
+        await self.bot.set_my_commands(
+            commands=[
+                BotCommand(command="start", description="Open planner menu"),
+            ],
+            scope=BotCommandScopeAllPrivateChats(),
+        )
+        if self.settings.effective_webapp_url and self.settings.effective_webapp_url.startswith("https://"):
+            await self.bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="Open Planner",
+                    web_app=WebAppInfo(url=self.settings.effective_webapp_url),
+                )
+            )
+            return
+        await self.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+
+    async def _safe_delete_webhook(self) -> None:
+        if not self.bot:
+            return
+        try:
+            await asyncio.wait_for(
+                self.bot.delete_webhook(drop_pending_updates=False),
+                timeout=5,
+            )
+        except (asyncio.TimeoutError, TelegramNetworkError):
             return
 
 
