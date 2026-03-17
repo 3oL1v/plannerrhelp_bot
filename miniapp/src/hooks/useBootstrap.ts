@@ -13,7 +13,8 @@ export function useBootstrap() {
   useEffect(() => {
     let active = true;
 
-    bootstrapTelegram(getBootstrapPayload())
+    getBootstrapPayload()
+      .then((payload) => bootstrapTelegram(payload))
       .then((response) => {
         if (!active) return;
         setAuthToken(response.token);
