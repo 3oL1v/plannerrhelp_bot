@@ -110,6 +110,30 @@ def build_event_payload(data: dict) -> EventCreate:
     )
 
 
+def format_task_creation_message(task, today: date) -> str:
+    lines = [f"Задача создана: {task.title}"]
+    if task.due_date:
+        when = task.due_date.isoformat()
+        if task.due_time:
+            when += f" {task.due_time.strftime('%H:%M')}"
+        lines.append(f"Срок: {when}")
+        if task.due_date != today:
+            lines.append(f"Она не появится в разделе «Сегодня», потому что сегодня {today.isoformat()}.")
+    else:
+        lines.append("Срок не задан.")
+    return "\n".join(lines)
+
+
+def format_event_creation_message(event, today: date) -> str:
+    lines = [
+        f"Событие создано: {event.title}",
+        f"Слот: {event.event_date.isoformat()} {event.start_time.strftime('%H:%M')}",
+    ]
+    if event.event_date != today:
+        lines.append(f"Оно не появится в разделе «Сегодня», потому что сегодня {today.isoformat()}.")
+    return "\n".join(lines)
+
+
 @dataclass
 class BotApplication:
     settings: Settings
@@ -289,7 +313,8 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
         async with session_factory() as session:
             task = await create_task(session, user_id, payload)
         await state.clear()
-        await message.answer(f"Задача создана: {task.title}", reply_markup=menu_keyboard())
+        today = today_in_timezone(data.get("timezone") or settings.default_timezone)
+        await message.answer(format_task_creation_message(task, today), reply_markup=menu_keyboard())
 
     async def complete_event_creation(message: Message, state: FSMContext, user_id: int) -> None:
         data = await state.get_data()
@@ -297,7 +322,8 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
         async with session_factory() as session:
             event = await create_event(session, user_id, payload)
         await state.clear()
-        await message.answer(f"Событие создано: {event.title}", reply_markup=menu_keyboard())
+        today = today_in_timezone(data.get("timezone") or settings.default_timezone)
+        await message.answer(format_event_creation_message(event, today), reply_markup=menu_keyboard())
 
     @router.message(CommandStart())
     async def start_handler(message: Message, state: FSMContext) -> None:
