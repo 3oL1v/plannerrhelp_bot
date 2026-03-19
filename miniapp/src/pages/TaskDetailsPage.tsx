@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { completeTask, deleteTask, getTask, rescheduleTask } from "../api/planner";
 import type { Task } from "../api/types";
@@ -7,12 +7,16 @@ import { ErrorState, LoadingState } from "../components/States";
 
 export function TaskDetailsPage() {
   const { taskId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [task, setTask] = useState<Task | null>(null);
   const [dueDate, setDueDate] = useState("");
   const [dueTime, setDueTime] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const notice = typeof (location.state as { notice?: string } | null)?.notice === "string"
+    ? (location.state as { notice?: string }).notice
+    : null;
 
   useEffect(() => {
     if (!taskId) return;
@@ -46,6 +50,7 @@ export function TaskDetailsPage() {
         <h2>{task.title}</h2>
         <p>Статус: {task.status}</p>
       </section>
+      {notice ? <section className="card muted">{notice}</section> : null}
       <section className="card">
         <form className="stack compact" onSubmit={submit}>
           <label>

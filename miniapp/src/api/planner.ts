@@ -31,17 +31,20 @@ export function deleteInbox(id: number) {
   return apiRequest<void>(`/api/v1/inbox/${id}`, { method: "DELETE" });
 }
 
-export function convertInboxToTask(id: number) {
-  return apiRequest<void>(`/api/v1/inbox/${id}/convert-to-task`, {
+export function convertInboxToTask(id: number, payload: { title?: string; due_date?: string | null; due_time?: string | null } = {}) {
+  return apiRequest<Task>(`/api/v1/inbox/${id}/convert-to-task`, {
     method: "POST",
-    body: JSON.stringify({})
+    body: JSON.stringify(payload)
   });
 }
 
-export function convertInboxToEvent(id: number) {
-  return apiRequest<void>(`/api/v1/inbox/${id}/convert-to-event`, {
+export function convertInboxToEvent(
+  id: number,
+  payload: { title?: string; event_date: string; start_time: string; duration_minutes?: number | null },
+) {
+  return apiRequest<EventItem>(`/api/v1/inbox/${id}/convert-to-event`, {
     method: "POST",
-    body: JSON.stringify({})
+    body: JSON.stringify(payload)
   });
 }
 

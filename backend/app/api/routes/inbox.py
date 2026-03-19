@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session
 from app.models.entities import User
-from app.schemas.common import InboxOut
+from app.schemas.common import EventOut, InboxOut, TaskOut
 from app.schemas.inbox import InboxConvertToEvent, InboxConvertToTask, InboxCreate, InboxUpdate
 from app.services.inbox import (
     convert_inbox_to_event,
@@ -14,9 +14,6 @@ from app.services.inbox import (
     list_inbox,
     update_inbox_item,
 )
-from app.services.settings import get_settings_for_user
-
-
 router = APIRouter()
 
 
@@ -63,30 +60,27 @@ async def remove_inbox(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/{inbox_id}/convert-to-task", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/{inbox_id}/convert-to-task", response_model=TaskOut)
 async def inbox_to_task(
     inbox_id: int,
     payload: InboxConvertToTask,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-) -> Response:
+) -> TaskOut:
     item = await get_inbox_item(session, user.id, inbox_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Inbox item not found")
-    await convert_inbox_to_task(session, user.id, item, payload)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return await convert_inbox_to_task(session, user.id, item, payload)
 
 
-@router.post("/{inbox_id}/convert-to-event", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/{inbox_id}/convert-to-event", response_model=EventOut)
 async def inbox_to_event_route(
     inbox_id: int,
     payload: InboxConvertToEvent,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-) -> Response:
+) -> EventOut:
     item = await get_inbox_item(session, user.id, inbox_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Inbox item not found")
-    user_settings = await get_settings_for_user(session, user.id)
-    await convert_inbox_to_event(session, user.id, item, payload, user_settings.timezone)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return await convert_inbox_to_event(session, user.id, item, payload)

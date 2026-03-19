@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-from datetime import time
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.entities import InboxItem, InboxStatus
+from app.models.entities import Event, InboxItem, InboxStatus, Task
 from app.schemas.event import EventCreate
 from app.schemas.inbox import InboxConvertToEvent, InboxConvertToTask, InboxCreate, InboxUpdate
 from app.schemas.task import TaskCreate
 from app.services.events import create_event
 from app.services.tasks import create_task
-from app.utils.datetime import today_in_timezone, utc_now
+from app.utils.datetime import utc_now
 
 
 async def list_inbox(session: AsyncSession, user_id: int) -> list[InboxItem]:
@@ -63,7 +61,7 @@ async def convert_inbox_to_task(
     user_id: int,
     item: InboxItem,
     payload: InboxConvertToTask,
-) -> None:
+) -> Task:
     task = TaskCreate(
         title=payload.title or item.text[:255],
         description=payload.description,
@@ -72,10 +70,11 @@ async def convert_inbox_to_task(
         due_date=payload.due_date,
         due_time=payload.due_time,
     )
-    await create_task(session, user_id, task, source_inbox_item_id=item.id)
+    created_task = await create_task(session, user_id, task, source_inbox_item_id=item.id)
     item.status = InboxStatus.PROCESSED.value
     item.processed_at = utc_now()
     await session.commit()
+    return created_task
 
 
 async def convert_inbox_to_event(
@@ -83,19 +82,19 @@ async def convert_inbox_to_event(
     user_id: int,
     item: InboxItem,
     payload: InboxConvertToEvent,
-    timezone_name: str,
-) -> None:
+) -> Event:
     event = EventCreate(
         title=payload.title or item.text[:255],
         description=payload.description,
         category_id=payload.category_id,
-        event_date=payload.event_date or today_in_timezone(timezone_name),
-        start_time=payload.start_time or time(hour=9, minute=0),
+        event_date=payload.event_date,
+        start_time=payload.start_time,
         end_time=payload.end_time,
         duration_minutes=payload.duration_minutes,
         location=payload.location,
     )
-    await create_event(session, user_id, event, source_inbox_item_id=item.id)
+    created_event = await create_event(session, user_id, event, source_inbox_item_id=item.id)
     item.status = InboxStatus.PROCESSED.value
     item.processed_at = utc_now()
     await session.commit()
+    return created_event

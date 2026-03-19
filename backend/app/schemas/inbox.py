@@ -27,8 +27,8 @@ class InboxConvertToEvent(BaseModel):
     title: str | None = None
     description: str | None = None
     category_id: int | None = None
-    event_date: date | None = None
-    start_time: time | None = None
+    event_date: date
+    start_time: time
     end_time: time | None = None
     duration_minutes: int | None = None
     location: str | None = None

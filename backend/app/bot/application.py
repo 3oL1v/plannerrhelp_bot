@@ -21,12 +21,8 @@ from app.bot.keyboards import (
     CANCEL_TEXT,
     CUSTOM_DATE_TEXT,
     CUSTOM_DURATION_TEXT,
-    CUSTOM_TIME_TEXT,
     EVENT_DURATION_OPTIONS,
-    EVENT_TIME_OPTIONS,
     NO_DATE_TEXT,
-    NO_TIME_TEXT,
-    TASK_TIME_OPTIONS,
     TODAY_TEXT,
     TOMORROW_TEXT,
     add_menu_keyboard,
@@ -280,10 +276,7 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
         await message.answer("Введи дату в формате YYYY-MM-DD", reply_markup=manual_input_keyboard())
 
     async def prompt_task_time(message: Message) -> None:
-        await message.answer("Во сколько напомнить о задаче?", reply_markup=task_time_keyboard())
-
-    async def prompt_task_custom_time(message: Message) -> None:
-        await message.answer("Введи время в формате HH:MM", reply_markup=manual_input_keyboard())
+        await message.answer("Введи время в формате HH:MM. Если время не нужно, отправь -", reply_markup=task_time_keyboard())
 
     async def prompt_event_title(message: Message) -> None:
         await message.answer("Как назвать событие?", reply_markup=flow_cancel_keyboard())
@@ -295,10 +288,7 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
         await message.answer("Введи дату события в формате YYYY-MM-DD", reply_markup=manual_input_keyboard())
 
     async def prompt_event_time(message: Message) -> None:
-        await message.answer("Во сколько начинается событие?", reply_markup=event_time_keyboard())
-
-    async def prompt_event_custom_time(message: Message) -> None:
-        await message.answer("Введи время начала в формате HH:MM", reply_markup=manual_input_keyboard())
+        await message.answer("Введи время начала в формате HH:MM", reply_markup=event_time_keyboard())
 
     async def prompt_event_duration(message: Message) -> None:
         await message.answer("Сколько длится событие?", reply_markup=event_duration_keyboard())
@@ -475,38 +465,18 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
         await state.set_state(PlannerStates.waiting_for_task_date)
         await prompt_task_date(message)
 
-    @router.message(PlannerStates.waiting_for_task_time, F.text.in_(TASK_TIME_OPTIONS))
-    async def task_time_quick(message: Message, state: FSMContext) -> None:
-        user = await ensure_message_user(message)
-        await state.update_data(due_time=message.text)
-        await complete_task_creation(message, state, user.id)
-
-    @router.message(PlannerStates.waiting_for_task_time, F.text == NO_TIME_TEXT)
+    @router.message(PlannerStates.waiting_for_task_time, F.text == "-")
     async def task_without_time(message: Message, state: FSMContext) -> None:
         user = await ensure_message_user(message)
         await state.update_data(due_time=None)
         await complete_task_creation(message, state, user.id)
 
-    @router.message(PlannerStates.waiting_for_task_time, F.text == CUSTOM_TIME_TEXT)
-    async def task_custom_time_prompt(message: Message, state: FSMContext) -> None:
-        await state.set_state(PlannerStates.waiting_for_task_custom_time)
-        await prompt_task_custom_time(message)
-
     @router.message(PlannerStates.waiting_for_task_time)
-    async def task_time_invalid(message: Message) -> None:
-        await message.answer("Выбери время кнопкой или нажми «Ввести свое».", reply_markup=task_time_keyboard())
-
-    @router.message(PlannerStates.waiting_for_task_custom_time, F.text == BACK_TEXT)
-    async def back_from_task_custom_time(message: Message, state: FSMContext) -> None:
-        await state.set_state(PlannerStates.waiting_for_task_time)
-        await prompt_task_time(message)
-
-    @router.message(PlannerStates.waiting_for_task_custom_time)
-    async def task_custom_time_flow(message: Message, state: FSMContext) -> None:
+    async def task_time_flow(message: Message, state: FSMContext) -> None:
         try:
             parsed_time = parse_time_input(message.text or "")
         except ValueError:
-            await message.answer("Нужен формат HH:MM, например 19:00.", reply_markup=manual_input_keyboard())
+            await message.answer("Нужен формат HH:MM, например 19:00. Если время не нужно, отправь -.", reply_markup=task_time_keyboard())
             return
         user = await ensure_message_user(message)
         await state.update_data(due_time=parsed_time.strftime("%H:%M"))
@@ -572,32 +542,12 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
         await state.set_state(PlannerStates.waiting_for_event_date)
         await prompt_event_date(message)
 
-    @router.message(PlannerStates.waiting_for_event_time, F.text.in_(EVENT_TIME_OPTIONS))
-    async def event_time_quick(message: Message, state: FSMContext) -> None:
-        await state.update_data(start_time=message.text, duration_minutes=None)
-        await state.set_state(PlannerStates.waiting_for_event_duration)
-        await prompt_event_duration(message)
-
-    @router.message(PlannerStates.waiting_for_event_time, F.text == CUSTOM_TIME_TEXT)
-    async def event_custom_time_prompt(message: Message, state: FSMContext) -> None:
-        await state.set_state(PlannerStates.waiting_for_event_custom_time)
-        await prompt_event_custom_time(message)
-
     @router.message(PlannerStates.waiting_for_event_time)
-    async def event_time_invalid(message: Message) -> None:
-        await message.answer("Выбери время кнопкой или нажми «Ввести свое».", reply_markup=event_time_keyboard())
-
-    @router.message(PlannerStates.waiting_for_event_custom_time, F.text == BACK_TEXT)
-    async def back_from_event_custom_time(message: Message, state: FSMContext) -> None:
-        await state.set_state(PlannerStates.waiting_for_event_time)
-        await prompt_event_time(message)
-
-    @router.message(PlannerStates.waiting_for_event_custom_time)
-    async def event_custom_time_flow(message: Message, state: FSMContext) -> None:
+    async def event_time_flow(message: Message, state: FSMContext) -> None:
         try:
             parsed_time = parse_time_input(message.text or "")
         except ValueError:
-            await message.answer("Нужен формат HH:MM, например 19:00.", reply_markup=manual_input_keyboard())
+            await message.answer("Нужен формат HH:MM, например 19:00.", reply_markup=event_time_keyboard())
             return
         await state.update_data(start_time=parsed_time.strftime("%H:%M"), duration_minutes=None)
         await state.set_state(PlannerStates.waiting_for_event_duration)

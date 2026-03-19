@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { deleteEvent, getEvent, rescheduleEvent } from "../api/planner";
 import type { EventItem } from "../api/types";
@@ -7,11 +7,15 @@ import { ErrorState, LoadingState } from "../components/States";
 
 export function EventDetailsPage() {
   const { eventId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [eventItem, setEventItem] = useState<EventItem | null>(null);
   const [schedule, setSchedule] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const notice = typeof (location.state as { notice?: string } | null)?.notice === "string"
+    ? (location.state as { notice?: string }).notice
+    : null;
 
   useEffect(() => {
     if (!eventId) return;
@@ -43,6 +47,7 @@ export function EventDetailsPage() {
         <h2>{eventItem.title}</h2>
         <p>Дата: {eventItem.event_date}</p>
       </section>
+      {notice ? <section className="card muted">{notice}</section> : null}
       <section className="card">
         <form className="stack compact" onSubmit={submit}>
           <label>
