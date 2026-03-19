@@ -294,7 +294,6 @@ class BotApplication:
             lower = str(exc).lower()
             if "message is not modified" in lower:
                 return True
-            setattr(view, slot, None)
             return False
         except TelegramNetworkError:
             return True
