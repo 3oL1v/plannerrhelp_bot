@@ -1,18 +1,30 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 import { addInbox, convertInboxToEvent, convertInboxToTask, deleteInbox, getInbox } from "../api/planner";
 import type { InboxItem } from "../api/types";
 import { EmptyState, ErrorState, LoadingState } from "../components/States";
 import { usePageRefresh } from "../hooks/usePageRefresh";
 
+function localDateInputValue() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 10);
+}
+
 export function InboxPage() {
-  const navigate = useNavigate();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [text, setText] = useState("");
+
+  const [taskDraftFor, setTaskDraftFor] = useState<number | null>(null);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDate, setTaskDate] = useState(localDateInputValue());
+  const [taskTime, setTaskTime] = useState("");
+
   const [eventDraftFor, setEventDraftFor] = useState<number | null>(null);
+  const [eventTitle, setEventTitle] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [eventTime, setEventTime] = useState("");
+
   const [busyId, setBusyId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +52,20 @@ export function InboxPage() {
 
   usePageRefresh(() => load(false), 5000);
 
+  function closeTaskDraft() {
+    setTaskDraftFor(null);
+    setTaskTitle("");
+    setTaskDate(localDateInputValue());
+    setTaskTime("");
+  }
+
+  function closeEventDraft() {
+    setEventDraftFor(null);
+    setEventTitle("");
+    setEventDate("");
+    setEventTime("");
+  }
+
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (!text.trim()) return;
@@ -48,16 +74,30 @@ export function InboxPage() {
     await load(false);
   }
 
+  function openTaskDraft(item: InboxItem) {
+    setActionError(null);
+    closeEventDraft();
+    setTaskDraftFor(item.id);
+    setTaskTitle(item.text);
+    setTaskDate(localDateInputValue());
+    setTaskTime("");
+  }
+
   async function onConvertToTask(item: InboxItem) {
+    if (!taskTitle.trim() || !taskDate) {
+      setActionError("Для задачи сначала укажи название и дату.");
+      return;
+    }
     setActionError(null);
     setBusyId(item.id);
     try {
-      const task = await convertInboxToTask(item.id, { title: item.text });
-      navigate(`/tasks/${task.id}`, {
-        state: {
-          notice: "Задача создана из Inbox. Если нужно, добавь срок и время на карточке."
-        }
+      await convertInboxToTask(item.id, {
+        title: taskTitle.trim(),
+        due_date: taskDate,
+        due_time: taskTime ? `${taskTime}:00` : null,
       });
+      closeTaskDraft();
+      await load(false);
     } catch (err) {
       setActionError((err as Error).message);
     } finally {
@@ -65,32 +105,30 @@ export function InboxPage() {
     }
   }
 
-  function openEventDraft(itemId: number) {
+  function openEventDraft(item: InboxItem) {
     setActionError(null);
-    setEventDraftFor(itemId);
+    closeTaskDraft();
+    setEventDraftFor(item.id);
+    setEventTitle(item.text);
     setEventDate("");
     setEventTime("");
   }
 
   async function onConvertToEvent(item: InboxItem) {
-    if (!eventDate || !eventTime) {
-      setActionError("Для события сначала выбери дату и время.");
+    if (!eventTitle.trim() || !eventDate || !eventTime) {
+      setActionError("Для события сначала укажи название, дату и время.");
       return;
     }
     setActionError(null);
     setBusyId(item.id);
     try {
-      const eventItem = await convertInboxToEvent(item.id, {
-        title: item.text,
+      await convertInboxToEvent(item.id, {
+        title: eventTitle.trim(),
         event_date: eventDate,
-        start_time: `${eventTime}:00`
+        start_time: `${eventTime}:00`,
       });
-      setEventDraftFor(null);
-      navigate(`/events/${eventItem.id}`, {
-        state: {
-          notice: "Событие создано из Inbox. При необходимости поправь слот на карточке."
-        }
-      });
+      closeEventDraft();
+      await load(false);
     } catch (err) {
       setActionError((err as Error).message);
     } finally {
@@ -118,22 +156,40 @@ export function InboxPage() {
         {items.map((item) => (
           <article key={item.id} className="card">
             <p>{item.text}</p>
-            <div className="actions">
-              <button type="button" disabled={busyId === item.id} onClick={() => void onConvertToTask(item)}>
-                В задачу
-              </button>
-              <button type="button" disabled={busyId === item.id} onClick={() => openEventDraft(item.id)}>
-                В событие
-              </button>
-              <button
-                type="button"
-                className="ghost"
-                disabled={busyId === item.id}
-                onClick={() => deleteInbox(item.id).then(() => load(false))}
+
+            {taskDraftFor === item.id ? (
+              <form
+                className="stack compact convert-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void onConvertToTask(item);
+                }}
               >
-                Удалить
-              </button>
-            </div>
+                <label>
+                  Название
+                  <input type="text" value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} required />
+                </label>
+                <div className="field-grid">
+                  <label>
+                    Дата
+                    <input type="date" value={taskDate} onChange={(event) => setTaskDate(event.target.value)} required />
+                  </label>
+                  <label>
+                    Время
+                    <input type="time" value={taskTime} onChange={(event) => setTaskTime(event.target.value)} />
+                  </label>
+                </div>
+                <div className="actions">
+                  <button type="submit" disabled={busyId === item.id}>
+                    Добавить задачу
+                  </button>
+                  <button type="button" className="ghost" onClick={closeTaskDraft}>
+                    Назад
+                  </button>
+                </div>
+              </form>
+            ) : null}
+
             {eventDraftFor === item.id ? (
               <form
                 className="stack compact convert-form"
@@ -142,7 +198,10 @@ export function InboxPage() {
                   void onConvertToEvent(item);
                 }}
               >
-                <p className="muted-text">Сначала задай дату и время, потом создавай событие.</p>
+                <label>
+                  Название
+                  <input type="text" value={eventTitle} onChange={(event) => setEventTitle(event.target.value)} required />
+                </label>
                 <div className="field-grid">
                   <label>
                     Дата
@@ -155,21 +214,32 @@ export function InboxPage() {
                 </div>
                 <div className="actions">
                   <button type="submit" disabled={busyId === item.id}>
-                    Создать событие
+                    Добавить событие
                   </button>
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => {
-                      setEventDraftFor(null);
-                      setEventDate("");
-                      setEventTime("");
-                    }}
-                  >
-                    Отмена
+                  <button type="button" className="ghost" onClick={closeEventDraft}>
+                    Назад
                   </button>
                 </div>
               </form>
+            ) : null}
+
+            {taskDraftFor !== item.id && eventDraftFor !== item.id ? (
+              <div className="actions">
+                <button type="button" disabled={busyId === item.id} onClick={() => openTaskDraft(item)}>
+                  Добавить задачу
+                </button>
+                <button type="button" disabled={busyId === item.id} onClick={() => openEventDraft(item)}>
+                  Добавить событие
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  disabled={busyId === item.id}
+                  onClick={() => deleteInbox(item.id).then(() => load(false))}
+                >
+                  Удалить
+                </button>
+              </div>
             ) : null}
           </article>
         ))}

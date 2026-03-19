@@ -85,6 +85,9 @@ def render_today_dashboard(dashboard: TodayDashboard) -> str:
 
 def render_today_events(dashboard: TodayDashboard) -> str:
     lines = ["📍 События"]
+    if not dashboard.events:
+        lines.append("Сегодня событий нет.")
+        return "\n".join(lines)
     for event in dashboard.events[:5]:
         end_time = f"–{format_pretty_time(event.end_time)}" if event.end_time else ""
         lines.append(f"• {format_pretty_time(event.start_time)}{end_time} — {safe_text(event.title)}")

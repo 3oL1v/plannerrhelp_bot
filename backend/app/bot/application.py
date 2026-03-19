@@ -54,6 +54,7 @@ class ChatViewState:
     tasks_message_id: int | None = None
     handoff_message_id: int | None = None
     flow_message_id: int | None = None
+    tracked_user_message_ids: list[int] = field(default_factory=list)
 
 
 def parse_time_input(value: str) -> time:
@@ -102,6 +103,17 @@ class BotApplication:
 
     def get_chat_view(self, chat_id: int) -> ChatViewState:
         return self.chat_views.setdefault(chat_id, ChatViewState())
+
+    def clear_tracked_user_messages(self, chat_id: int) -> list[int]:
+        view = self.get_chat_view(chat_id)
+        message_ids = list(dict.fromkeys(view.tracked_user_message_ids))
+        view.tracked_user_message_ids.clear()
+        return message_ids
+
+    def track_user_message(self, chat_id: int, message_id: int) -> None:
+        view = self.get_chat_view(chat_id)
+        if message_id not in view.tracked_user_message_ids:
+            view.tracked_user_message_ids.append(message_id)
 
     async def start(self) -> None:
         if not self.bot or not self.dispatcher:
@@ -161,6 +173,35 @@ class BotApplication:
         with contextlib.suppress(TelegramBadRequest, TelegramNetworkError):
             await self.bot.delete_message(chat_id=chat_id, message_id=message_id)
         setattr(view, slot, None)
+
+    async def delete_messages(self, chat_id: int, message_ids: list[int]) -> None:
+        if not self.bot:
+            return
+        for message_id in dict.fromkeys(message_ids):
+            with contextlib.suppress(TelegramBadRequest, TelegramNetworkError):
+                await self.bot.delete_message(chat_id=chat_id, message_id=message_id)
+
+    def schedule_message_cleanup(self, chat_id: int, message_ids: list[int], delay_seconds: float = 5) -> None:
+        if not self.bot or not message_ids:
+            return
+        asyncio.create_task(self._delete_messages_after_delay(chat_id, message_ids, delay_seconds))
+
+    async def _delete_messages_after_delay(self, chat_id: int, message_ids: list[int], delay_seconds: float) -> None:
+        await asyncio.sleep(delay_seconds)
+        await self.delete_messages(chat_id, message_ids)
+
+    async def cleanup_tracked_user_messages(self, chat_id: int) -> None:
+        await self.delete_messages(chat_id, self.clear_tracked_user_messages(chat_id))
+
+    async def reset_today_slots(self, chat_id: int) -> None:
+        for slot in (
+            "summary_message_id",
+            "events_message_id",
+            "tasks_message_id",
+            "handoff_message_id",
+            "flow_message_id",
+        ):
+            await self.delete_slot(chat_id, slot)
 
     async def upsert_slot(
         self,
@@ -225,26 +266,20 @@ class BotApplication:
             send_markup=main_menu_keyboard(self.settings.effective_webapp_url),
         )
 
-        if dashboard.events:
-            await self.upsert_slot(
-                chat_id,
-                "events_message_id",
-                render_today_events(dashboard),
-            )
-        else:
-            await self.delete_slot(chat_id, "events_message_id")
+        await self.upsert_slot(
+            chat_id,
+            "events_message_id",
+            render_today_events(dashboard),
+        )
 
-        if dashboard.tasks or dashboard.completed_tasks or dashboard.overdue_tasks:
-            tasks_markup = today_tasks_keyboard(dashboard.tasks, dashboard.overdue_tasks)
-            await self.upsert_slot(
-                chat_id,
-                "tasks_message_id",
-                render_today_tasks(dashboard),
-                send_markup=tasks_markup,
-                edit_markup=tasks_markup,
-            )
-        else:
-            await self.delete_slot(chat_id, "tasks_message_id")
+        tasks_markup = today_tasks_keyboard(dashboard.tasks, dashboard.overdue_tasks)
+        await self.upsert_slot(
+            chat_id,
+            "tasks_message_id",
+            render_today_tasks(dashboard),
+            send_markup=tasks_markup,
+            edit_markup=tasks_markup,
+        )
 
     async def _configure_production_bot(self) -> None:
         if not self.bot:
@@ -313,41 +348,30 @@ def build_router(bot_app: BotApplication) -> Router:
 
     async def finalize_task_creation(chat_id: int, user_id: int, title: str, due_date: date, due_time: time | None) -> None:
         async with session_factory() as session:
-            task = await create_task(
+            await create_task(
                 session,
                 user_id,
                 TaskCreate(title=title, due_date=due_date, due_time=due_time),
             )
         await bot_app.refresh_today_view(chat_id, user_id)
-        when = due_date.strftime("%d.%m")
-        if due_time:
-            when = f"{when} • {due_time.strftime('%H:%M')}"
-        await bot_app.send_handoff(
-            chat_id,
-            "🗂 Задача добавлена",
-            f"{task.title}\n{when}",
-            planner_handoff_keyboard(settings.effective_webapp_url),
-        )
+        await bot_app.cleanup_tracked_user_messages(chat_id)
 
     async def finalize_event_creation(chat_id: int, user_id: int, title: str, event_date: date, start_time: time) -> None:
         async with session_factory() as session:
-            event = await create_event(
+            await create_event(
                 session,
                 user_id,
                 EventCreate(title=title, event_date=event_date, start_time=start_time),
             )
         await bot_app.refresh_today_view(chat_id, user_id)
-        await bot_app.send_handoff(
-            chat_id,
-            "📍 Событие добавлено",
-            f"{event.title}\n{event_date.strftime('%d.%m')} • {start_time.strftime('%H:%M')}",
-            planner_handoff_keyboard(settings.effective_webapp_url),
-        )
+        await bot_app.cleanup_tracked_user_messages(chat_id)
 
     @router.message(CommandStart())
     async def start_handler(message: Message, state: FSMContext) -> None:
         await state.clear()
         user = await ensure_message_user(message)
+        bot_app.clear_tracked_user_messages(message.chat.id)
+        await bot_app.reset_today_slots(message.chat.id)
         await bot_app.refresh_today_view(message.chat.id, user.id)
 
     @router.message(StateFilter(None), F.text.in_({MENU_TODAY_TEXT, TODAY_TEXT}))
@@ -356,8 +380,11 @@ def build_router(bot_app: BotApplication) -> Router:
         await bot_app.refresh_today_view(message.chat.id, user.id)
 
     @router.message(StateFilter(None), F.text == "+")
-    async def plus_handler(message: Message) -> None:
+    async def plus_handler(message: Message, state: FSMContext) -> None:
         await ensure_message_user(message)
+        await state.clear()
+        bot_app.clear_tracked_user_messages(message.chat.id)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         markup = add_menu_keyboard()
         await bot_app.upsert_slot(
             message.chat.id,
@@ -383,8 +410,10 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(StateFilter("*"), F.text == CANCEL_TEXT)
     async def cancel_state_handler(message: Message, state: FSMContext) -> None:
         user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         await state.clear()
         await bot_app.delete_slot(message.chat.id, "flow_message_id")
+        await bot_app.cleanup_tracked_user_messages(message.chat.id)
         await bot_app.refresh_today_view(message.chat.id, user.id)
 
     @router.callback_query(F.data == "add:task")
@@ -412,6 +441,7 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(PlannerStates.waiting_for_task_title)
     async def task_title_flow(message: Message, state: FSMContext) -> None:
         user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         title = (message.text or "").strip()
         if not title:
             await bot_app.send_flow_prompt(message.chat.id, "Название задачи не должно быть пустым.", flow_cancel_keyboard())
@@ -427,12 +457,14 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(PlannerStates.waiting_for_task_date, F.text == BACK_TEXT)
     async def task_date_back(message: Message, state: FSMContext) -> None:
         await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         await state.set_state(PlannerStates.waiting_for_task_title)
         await bot_app.send_flow_prompt(message.chat.id, "Как назвать задачу?", flow_cancel_keyboard())
 
     @router.message(PlannerStates.waiting_for_task_date, F.text == TODAY_TEXT)
     async def task_date_today(message: Message, state: FSMContext) -> None:
         user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         today_value = await get_user_today(user.id)
         await state.update_data(task_date=today_value.isoformat())
         await state.set_state(PlannerStates.waiting_for_task_time)
@@ -445,6 +477,7 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(PlannerStates.waiting_for_task_date)
     async def task_date_manual(message: Message, state: FSMContext) -> None:
         user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         today_value = await get_user_today(user.id)
         try:
             due_date = parse_manual_date(message.text or "", today_value)
@@ -466,6 +499,7 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(PlannerStates.waiting_for_task_time, F.text == BACK_TEXT)
     async def task_time_back(message: Message, state: FSMContext) -> None:
         await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         await state.set_state(PlannerStates.waiting_for_task_date)
         await bot_app.send_flow_prompt(
             message.chat.id,
@@ -476,6 +510,7 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(PlannerStates.waiting_for_task_time, F.text == NO_TIME_TEXT)
     async def task_time_none(message: Message, state: FSMContext) -> None:
         user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         data = await state.get_data()
         await state.clear()
         await bot_app.delete_slot(message.chat.id, "flow_message_id")
@@ -490,6 +525,7 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(PlannerStates.waiting_for_task_time)
     async def task_time_manual(message: Message, state: FSMContext) -> None:
         user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         try:
             due_time = parse_time_input(message.text or "")
         except ValueError:
@@ -513,6 +549,7 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(PlannerStates.waiting_for_event_title)
     async def event_title_flow(message: Message, state: FSMContext) -> None:
         user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         title = (message.text or "").strip()
         if not title:
             await bot_app.send_flow_prompt(message.chat.id, "Название события не должно быть пустым.", flow_cancel_keyboard())
@@ -528,12 +565,14 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(PlannerStates.waiting_for_event_date, F.text == BACK_TEXT)
     async def event_date_back(message: Message, state: FSMContext) -> None:
         await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         await state.set_state(PlannerStates.waiting_for_event_title)
         await bot_app.send_flow_prompt(message.chat.id, "Как назвать событие?", flow_cancel_keyboard())
 
     @router.message(PlannerStates.waiting_for_event_date, F.text == TODAY_TEXT)
     async def event_date_today(message: Message, state: FSMContext) -> None:
         user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         today_value = await get_user_today(user.id)
         await state.update_data(event_date=today_value.isoformat())
         await state.set_state(PlannerStates.waiting_for_event_time)
@@ -546,6 +585,7 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(PlannerStates.waiting_for_event_date)
     async def event_date_manual(message: Message, state: FSMContext) -> None:
         user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         today_value = await get_user_today(user.id)
         try:
             event_date = parse_manual_date(message.text or "", today_value)
@@ -567,6 +607,7 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(PlannerStates.waiting_for_event_time, F.text == BACK_TEXT)
     async def event_time_back(message: Message, state: FSMContext) -> None:
         await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         await state.set_state(PlannerStates.waiting_for_event_date)
         await bot_app.send_flow_prompt(
             message.chat.id,
@@ -577,6 +618,7 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(PlannerStates.waiting_for_event_time)
     async def event_time_manual(message: Message, state: FSMContext) -> None:
         user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
         try:
             start_time = parse_time_input(message.text or "")
         except ValueError:
@@ -649,17 +691,15 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(StateFilter(None), F.text)
     async def free_text_handler(message: Message) -> None:
         user = await ensure_message_user(message)
-        text = (message.text or "").strip()
+        text = (message.text or '').strip()
         if not text:
             return
         async with session_factory() as session:
             await create_inbox_item(session, user.id, InboxCreate(text=text))
-        preview = text if len(text) <= 90 else f"{text[:87]}..."
-        await bot_app.send_handoff(
-            message.chat.id,
-            "📝 Сохранено в заметки",
-            preview,
-            planner_handoff_keyboard(settings.effective_webapp_url),
-        )
+        if not bot_app.bot:
+            return
+        with contextlib.suppress(TelegramBadRequest, TelegramNetworkError):
+            sent = await bot_app.bot.send_message(message.chat.id, 'Сохранено в заметки')
+            bot_app.schedule_message_cleanup(message.chat.id, [message.message_id, sent.message_id], delay_seconds=5)
 
     return router
