@@ -85,6 +85,7 @@ class BotApplication:
     bot: Bot | None = None
     dispatcher: Dispatcher | None = None
     polling_task: asyncio.Task | None = None
+    production_setup_task: asyncio.Task | None = None
     chat_views: dict[int, ChatViewState] = field(default_factory=dict)
     user_chats: dict[int, set[int]] = field(default_factory=dict)
 
@@ -147,11 +148,7 @@ class BotApplication:
         if not self.bot or not self.dispatcher:
             return
         if self.settings.is_production and self.settings.webhook_url:
-            await self._configure_production_bot()
-            await self.bot.set_webhook(
-                self.settings.webhook_url,
-                allowed_updates=self.dispatcher.resolve_used_update_types(),
-            )
+            self.production_setup_task = asyncio.create_task(self._configure_production_webhook())
         elif self.settings.telegram_use_polling:
             await self._safe_delete_webhook()
             self.polling_task = asyncio.create_task(
@@ -164,6 +161,10 @@ class BotApplication:
     async def stop(self) -> None:
         if not self.bot:
             return
+        if self.production_setup_task:
+            self.production_setup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.production_setup_task
         if self.polling_task:
             self.polling_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -330,6 +331,21 @@ class BotApplication:
             )
             return
         await self.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+
+    async def _configure_production_webhook(self) -> None:
+        if not self.bot or not self.dispatcher or not self.settings.webhook_url:
+            return
+        try:
+            await asyncio.wait_for(self._configure_production_bot(), timeout=10)
+            await asyncio.wait_for(
+                self.bot.set_webhook(
+                    self.settings.webhook_url,
+                    allowed_updates=self.dispatcher.resolve_used_update_types(),
+                ),
+                timeout=10,
+            )
+        except (asyncio.TimeoutError, TelegramNetworkError, TelegramBadRequest):
+            return
 
     async def _safe_delete_webhook(self) -> None:
         if not self.bot:
