@@ -16,7 +16,7 @@ export function AppShell() {
         <NavLink to="/">Today</NavLink>
         <NavLink to="/week">Week</NavLink>
         <NavLink to="/inbox">Inbox</NavLink>
-        <NavLink to="/more">More</NavLink>
+        <NavLink to="/settings">Settings</NavLink>
       </nav>
     </div>
   );

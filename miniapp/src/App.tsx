@@ -5,7 +5,6 @@ import { ErrorState, LoadingState } from "./components/States";
 import { useBootstrap } from "./hooks/useBootstrap";
 import { EventDetailsPage } from "./pages/EventDetailsPage";
 import { InboxPage } from "./pages/InboxPage";
-import { MorePage } from "./pages/MorePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TaskDetailsPage } from "./pages/TaskDetailsPage";
 import { TodayPage } from "./pages/TodayPage";
@@ -26,7 +25,7 @@ export default function App() {
         <Route path="/tasks/:taskId" element={<TaskDetailsPage />} />
         <Route path="/events/:eventId" element={<EventDetailsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/more" element={<MorePage />} />
+        <Route path="/more" element={<Navigate to="/settings" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

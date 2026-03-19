@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, WebAppInfo
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
@@ -27,14 +27,9 @@ def build_reply_keyboard(rows: list[list[str]]) -> ReplyKeyboardMarkup:
 
 
 def main_menu_keyboard(webapp_url: str | None) -> ReplyKeyboardMarkup:
-    planner_button = [KeyboardButton(text="Открыть планировщик")]
-    if webapp_url and webapp_url.startswith("https://"):
-        planner_button = [KeyboardButton(text="Открыть планировщик", web_app=WebAppInfo(url=webapp_url))]
     rows = [
         [KeyboardButton(text="Сегодня"), KeyboardButton(text="+")],
         [KeyboardButton(text="Входящие")],
-        planner_button,
-        [KeyboardButton(text="Настройки"), KeyboardButton(text="Помощь")],
     ]
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
