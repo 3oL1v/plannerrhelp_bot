@@ -41,7 +41,7 @@ from app.schemas.task import TaskCreate
 from app.services.dashboard import build_today_dashboard
 from app.services.events import create_event, get_event
 from app.services.inbox import create_inbox_item
-from app.services.settings import get_settings_for_user
+from app.services.settings import clear_today_completed_for_user, get_settings_for_user, persist_bot_today_slots
 from app.services.tasks import complete_task, create_task, get_task
 from app.services.users import ensure_user
 from app.utils.datetime import today_in_timezone
@@ -55,6 +55,7 @@ class ChatViewState:
     handoff_message_id: int | None = None
     flow_message_id: int | None = None
     tracked_user_message_ids: list[int] = field(default_factory=list)
+    show_completed_tasks: bool = False
 
 
 def parse_time_input(value: str) -> time:
@@ -114,6 +115,33 @@ class BotApplication:
         view = self.get_chat_view(chat_id)
         if message_id not in view.tracked_user_message_ids:
             view.tracked_user_message_ids.append(message_id)
+
+    async def load_persisted_today_slots(self, user_id: int, chat_id: int) -> None:
+        view = self.get_chat_view(chat_id)
+        if view.summary_message_id and view.events_message_id and view.tasks_message_id:
+            return
+        async with self.session_factory() as session:
+            user_settings = await get_settings_for_user(session, user_id)
+        if user_settings.bot_chat_id and user_settings.bot_chat_id != chat_id:
+            return
+        if view.summary_message_id is None:
+            view.summary_message_id = user_settings.bot_summary_message_id
+        if view.events_message_id is None:
+            view.events_message_id = user_settings.bot_events_message_id
+        if view.tasks_message_id is None:
+            view.tasks_message_id = user_settings.bot_tasks_message_id
+
+    async def persist_today_slots(self, user_id: int, chat_id: int) -> None:
+        view = self.get_chat_view(chat_id)
+        async with self.session_factory() as session:
+            await persist_bot_today_slots(
+                session,
+                user_id,
+                chat_id=chat_id,
+                summary_message_id=view.summary_message_id,
+                events_message_id=view.events_message_id,
+                tasks_message_id=view.tasks_message_id,
+            )
 
     async def start(self) -> None:
         if not self.bot or not self.dispatcher:
@@ -193,7 +221,7 @@ class BotApplication:
     async def cleanup_tracked_user_messages(self, chat_id: int) -> None:
         await self.delete_messages(chat_id, self.clear_tracked_user_messages(chat_id))
 
-    async def reset_today_slots(self, chat_id: int) -> None:
+    async def reset_today_slots(self, chat_id: int, user_id: int | None = None) -> None:
         for slot in (
             "summary_message_id",
             "events_message_id",
@@ -202,6 +230,8 @@ class BotApplication:
             "flow_message_id",
         ):
             await self.delete_slot(chat_id, slot)
+        if user_id is not None:
+            await self.persist_today_slots(user_id, chat_id)
 
     async def upsert_slot(
         self,
@@ -253,6 +283,8 @@ class BotApplication:
         )
 
     async def refresh_today_view(self, chat_id: int, user_id: int) -> None:
+        await self.load_persisted_today_slots(user_id, chat_id)
+        view = self.get_chat_view(chat_id)
         async with self.session_factory() as session:
             dashboard = await build_today_dashboard(session, user_id)
 
@@ -272,14 +304,15 @@ class BotApplication:
             render_today_events(dashboard),
         )
 
-        tasks_markup = today_tasks_keyboard(dashboard.tasks, dashboard.overdue_tasks)
+        tasks_markup = today_tasks_keyboard(dashboard, show_completed=view.show_completed_tasks)
         await self.upsert_slot(
             chat_id,
             "tasks_message_id",
-            render_today_tasks(dashboard),
+            render_today_tasks(dashboard, show_completed=view.show_completed_tasks),
             send_markup=tasks_markup,
             edit_markup=tasks_markup,
         )
+        await self.persist_today_slots(user_id, chat_id)
 
     async def _configure_production_bot(self) -> None:
         if not self.bot:
@@ -371,7 +404,7 @@ def build_router(bot_app: BotApplication) -> Router:
         await state.clear()
         user = await ensure_message_user(message)
         bot_app.clear_tracked_user_messages(message.chat.id)
-        await bot_app.reset_today_slots(message.chat.id)
+        await bot_app.reset_today_slots(message.chat.id, user.id)
         await bot_app.refresh_today_view(message.chat.id, user.id)
 
     @router.message(StateFilter(None), F.text.in_({MENU_TODAY_TEXT, TODAY_TEXT}))
@@ -667,6 +700,25 @@ def build_router(bot_app: BotApplication) -> Router:
         await bot_app.refresh_today_view(chat_id, user.id)
         await callback.answer("Выполнено")
 
+    @router.callback_query(F.data == "today:completed:toggle")
+    async def toggle_completed_tasks(callback: CallbackQuery) -> None:
+        user = await ensure_callback_user(callback)
+        chat_id = callback.message.chat.id if callback.message else callback.from_user.id
+        view = bot_app.get_chat_view(chat_id)
+        view.show_completed_tasks = not view.show_completed_tasks
+        await bot_app.refresh_today_view(chat_id, user.id)
+        await callback.answer()
+
+    @router.callback_query(F.data == "today:completed:clear")
+    async def clear_completed_tasks(callback: CallbackQuery) -> None:
+        user = await ensure_callback_user(callback)
+        chat_id = callback.message.chat.id if callback.message else callback.from_user.id
+        async with session_factory() as session:
+            await clear_today_completed_for_user(session, user.id)
+        bot_app.get_chat_view(chat_id).show_completed_tasks = False
+        await bot_app.refresh_today_view(chat_id, user.id)
+        await callback.answer("Список очищен")
+
     @router.callback_query(F.data.startswith("event:"))
     async def event_callbacks(callback: CallbackQuery, state: FSMContext) -> None:
         _, _, raw_id = (callback.data or "").split(":")
@@ -699,7 +751,7 @@ def build_router(bot_app: BotApplication) -> Router:
         if not bot_app.bot:
             return
         with contextlib.suppress(TelegramBadRequest, TelegramNetworkError):
-            sent = await bot_app.bot.send_message(message.chat.id, 'Сохранено в заметки')
-            bot_app.schedule_message_cleanup(message.chat.id, [message.message_id, sent.message_id], delay_seconds=5)
+            sent = await bot_app.bot.send_message(message.chat.id, "Заметка добавлена")
+            bot_app.schedule_message_cleanup(message.chat.id, [message.message_id, sent.message_id], delay_seconds=8)
 
     return router

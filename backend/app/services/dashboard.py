@@ -26,8 +26,7 @@ async def build_today_dashboard(session: AsyncSession, user_id: int) -> TodayDas
         .order_by(Task.due_time.is_(None), Task.due_time, Task.created_at.desc())
     )
     completed_result = await session.execute(
-        select(Task)
-        .where(Task.user_id == user_id, Task.deleted_at.is_(None), Task.status == "completed", Task.due_date == today)
+        select(Task).where(Task.user_id == user_id, Task.deleted_at.is_(None), Task.status == "completed", Task.due_date == today)
         .order_by(Task.completed_at.desc().nullslast(), Task.updated_at.desc())
     )
     overdue_result = await session.execute(
@@ -45,6 +44,12 @@ async def build_today_dashboard(session: AsyncSession, user_id: int) -> TodayDas
     events = list(events_result.scalars().all())
     tasks = list(tasks_result.scalars().all())
     completed_tasks = list(completed_result.scalars().all())
+    if user_settings.today_completed_hidden_before is not None:
+        completed_tasks = [
+            task
+            for task in completed_tasks
+            if task.completed_at is not None and task.completed_at > user_settings.today_completed_hidden_before
+        ]
     overdue = list(overdue_result.scalars().all())
     inbox = list(inbox_result.scalars().all())
 

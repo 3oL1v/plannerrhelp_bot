@@ -12,6 +12,12 @@ export function getTodayDashboard() {
   return apiRequest<TodayDashboard>("/api/v1/dashboard/today");
 }
 
+export function clearTodayCompletedList() {
+  return apiRequest<void>("/api/v1/dashboard/today/completed/clear", {
+    method: "POST"
+  });
+}
+
 export function getWeekDashboard() {
   return apiRequest<WeekDashboard>("/api/v1/dashboard/week");
 }

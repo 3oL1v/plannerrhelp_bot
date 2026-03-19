@@ -84,6 +84,11 @@ class UserSettings(Base):
     default_reminder_minutes: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     week_starts_on: Mapped[str] = mapped_column(String(16), default=WeekStartsOn.MONDAY.value, nullable=False)
     last_morning_digest_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bot_chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    bot_summary_message_id: Mapped[int | None] = mapped_column(Integer)
+    bot_events_message_id: Mapped[int | None] = mapped_column(Integer)
+    bot_tasks_message_id: Mapped[int | None] = mapped_column(Integer)
+    today_completed_hidden_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped[User] = relationship(back_populates="settings")
 

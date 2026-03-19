@@ -94,7 +94,7 @@ def render_today_events(dashboard: TodayDashboard) -> str:
     return "\n".join(lines)
 
 
-def render_today_tasks(dashboard: TodayDashboard) -> str:
+def render_today_tasks(dashboard: TodayDashboard, *, show_completed: bool = False) -> str:
     lines = ["🗂 Задачи"]
 
     if dashboard.tasks:
@@ -103,8 +103,9 @@ def render_today_tasks(dashboard: TodayDashboard) -> str:
     if dashboard.completed_tasks:
         if len(lines) > 1:
             lines.append("")
-        lines.append("✅ Выполнено")
-        lines.extend(build_task_line(task, completed=True) for task in dashboard.completed_tasks[:8])
+        lines.append(f"✅ Выполнено сегодня: {len(dashboard.completed_tasks)}")
+        if show_completed:
+            lines.extend(f"• ✅ {safe_text(task.title)}" for task in dashboard.completed_tasks[:8])
 
     if dashboard.overdue_tasks:
         if len(lines) > 1:

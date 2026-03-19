@@ -58,17 +58,19 @@ def build_task_complete_label(title: str, *, overdue: bool = False) -> str:
     return f"{prefix}{label}"
 
 
-def today_tasks_keyboard(tasks, overdue_tasks) -> InlineKeyboardMarkup | None:
+def today_tasks_keyboard(dashboard, *, show_completed: bool = False) -> InlineKeyboardMarkup | None:
     rows: list[list[InlineKeyboardButton]] = []
-    for task in tasks[:8]:
+    for task in dashboard.tasks[:8]:
         rows.append([InlineKeyboardButton(text=build_task_complete_label(task.title), callback_data=f"task:complete:{task.id}")])
-    for task in overdue_tasks[:8]:
+    for task in dashboard.overdue_tasks[:8]:
         rows.append([InlineKeyboardButton(text=build_task_complete_label(task.title, overdue=True), callback_data=f"task:complete:{task.id}")])
+    if dashboard.completed_tasks:
+        toggle_text = "Скрыть выполненные" if show_completed else "Показать выполненные"
+        rows.append([InlineKeyboardButton(text=toggle_text, callback_data="today:completed:toggle")])
+        rows.append([InlineKeyboardButton(text="Очистить список", callback_data="today:completed:clear")])
     if not rows:
         return None
     return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
 def task_date_keyboard() -> ReplyKeyboardMarkup:
     return build_reply_keyboard(
         [

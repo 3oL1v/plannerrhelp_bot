@@ -57,6 +57,7 @@ export interface TodayDashboard {
   next_event: EventItem | null;
   events: EventItem[];
   tasks: Task[];
+  completed_tasks: Task[];
   overdue_tasks: Task[];
   inbox_preview: InboxItem[];
 }
