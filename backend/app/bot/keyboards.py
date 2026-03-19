@@ -29,7 +29,7 @@ def build_inline_planner_button(webapp_url: str | None, text: str = MENU_PLANNER
 
 
 def main_menu_keyboard(_webapp_url: str | None) -> ReplyKeyboardMarkup:
-    return build_reply_keyboard([[KeyboardButton(text=MENU_TODAY_TEXT), KeyboardButton(text="+")]])
+    return build_reply_keyboard([[KeyboardButton(text="+")]])
 
 
 def add_menu_keyboard() -> InlineKeyboardMarkup:
@@ -74,7 +74,7 @@ def today_tasks_keyboard(dashboard, *, show_completed: bool = False) -> InlineKe
 def task_date_keyboard() -> ReplyKeyboardMarkup:
     return build_reply_keyboard(
         [
-            [KeyboardButton(text=TODAY_TEXT)],
+            [KeyboardButton(text=TODAY_TEXT), KeyboardButton(text=TOMORROW_TEXT)],
             [KeyboardButton(text=BACK_TEXT), KeyboardButton(text=CANCEL_TEXT)],
         ]
     )
@@ -83,7 +83,7 @@ def task_date_keyboard() -> ReplyKeyboardMarkup:
 def event_date_keyboard() -> ReplyKeyboardMarkup:
     return build_reply_keyboard(
         [
-            [KeyboardButton(text=TODAY_TEXT)],
+            [KeyboardButton(text=TODAY_TEXT), KeyboardButton(text=TOMORROW_TEXT)],
             [KeyboardButton(text=BACK_TEXT), KeyboardButton(text=CANCEL_TEXT)],
         ]
     )

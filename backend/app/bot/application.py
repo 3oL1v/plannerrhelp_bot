@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -23,6 +23,7 @@ from app.bot.keyboards import (
     MENU_TODAY_TEXT,
     NO_TIME_TEXT,
     TODAY_TEXT,
+    TOMORROW_TEXT,
     add_menu_keyboard,
     event_date_keyboard,
     event_time_keyboard,
@@ -267,6 +268,37 @@ class BotApplication:
         setattr(view, slot, sent.message_id)
         return sent.message_id
 
+    async def try_update_slot(
+        self,
+        chat_id: int,
+        slot: str,
+        text: str,
+        *,
+        edit_markup: InlineKeyboardMarkup | None = None,
+    ) -> bool:
+        if not self.bot:
+            return False
+        view = self.get_chat_view(chat_id)
+        message_id = getattr(view, slot)
+        if not message_id:
+            return False
+        try:
+            await self.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=edit_markup,
+            )
+            return True
+        except TelegramBadRequest as exc:
+            lower = str(exc).lower()
+            if "message is not modified" in lower:
+                return True
+            setattr(view, slot, None)
+            return False
+        except TelegramNetworkError:
+            return True
+
     async def send_flow_prompt(self, chat_id: int, text: str, reply_markup: ReplyKeyboardMarkup) -> None:
         if not self.bot:
             return
@@ -292,27 +324,66 @@ class BotApplication:
         await self.delete_slot(chat_id, "flow_message_id")
         await self.delete_slot(chat_id, "handoff_message_id")
 
-        await self.upsert_slot(
-            chat_id,
-            "summary_message_id",
-            render_today_dashboard(dashboard),
-            send_markup=main_menu_keyboard(self.settings.effective_webapp_url),
-        )
-
-        await self.upsert_slot(
-            chat_id,
-            "events_message_id",
-            render_today_events(dashboard),
-        )
-
+        summary_text = render_today_dashboard(dashboard)
+        events_text = render_today_events(dashboard)
         tasks_markup = today_tasks_keyboard(dashboard, show_completed=view.show_completed_tasks)
-        await self.upsert_slot(
+        tasks_text = render_today_tasks(dashboard, show_completed=view.show_completed_tasks)
+
+        summary_ok = await self.try_update_slot(chat_id, "summary_message_id", summary_text)
+        events_ok = await self.try_update_slot(chat_id, "events_message_id", events_text)
+        tasks_ok = await self.try_update_slot(
             chat_id,
             "tasks_message_id",
-            render_today_tasks(dashboard, show_completed=view.show_completed_tasks),
-            send_markup=tasks_markup,
+            tasks_text,
             edit_markup=tasks_markup,
         )
+
+        if not summary_ok:
+            await self.delete_slot(chat_id, "summary_message_id")
+            await self.delete_slot(chat_id, "events_message_id")
+            await self.delete_slot(chat_id, "tasks_message_id")
+
+            await self.upsert_slot(
+                chat_id,
+                "summary_message_id",
+                summary_text,
+                send_markup=main_menu_keyboard(self.settings.effective_webapp_url),
+            )
+            await self.upsert_slot(
+                chat_id,
+                "events_message_id",
+                events_text,
+            )
+            await self.upsert_slot(
+                chat_id,
+                "tasks_message_id",
+                tasks_text,
+                send_markup=tasks_markup,
+                edit_markup=tasks_markup,
+            )
+            await self.persist_today_slots(user_id, chat_id)
+            return
+
+        if not events_ok:
+            if tasks_ok:
+                await self.delete_slot(chat_id, "tasks_message_id")
+                tasks_ok = False
+            await self.delete_slot(chat_id, "events_message_id")
+            await self.upsert_slot(
+                chat_id,
+                "events_message_id",
+                events_text,
+            )
+
+        if not tasks_ok:
+            await self.delete_slot(chat_id, "tasks_message_id")
+            await self.upsert_slot(
+                chat_id,
+                "tasks_message_id",
+                tasks_text,
+                send_markup=tasks_markup,
+                edit_markup=tasks_markup,
+            )
         await self.persist_today_slots(user_id, chat_id)
 
     async def _configure_production_bot(self) -> None:
@@ -498,7 +569,7 @@ def build_router(bot_app: BotApplication) -> Router:
         await state.set_state(PlannerStates.waiting_for_task_date)
         await bot_app.send_flow_prompt(
             message.chat.id,
-            "На какую дату поставить задачу?\nНажми «Сегодня» или напиши дату в формате ДД.ММ.",
+            "На какую дату поставить задачу?\nНажми «Сегодня» или «Завтра», либо напиши дату в формате ДД.ММ.",
             task_date_keyboard(),
         )
 
@@ -515,6 +586,19 @@ def build_router(bot_app: BotApplication) -> Router:
         bot_app.track_user_message(message.chat.id, message.message_id)
         today_value = await get_user_today(user.id)
         await state.update_data(task_date=today_value.isoformat())
+        await state.set_state(PlannerStates.waiting_for_task_time)
+        await bot_app.send_flow_prompt(
+            message.chat.id,
+            "Во сколько поставить задачу?\nНажми «Без времени» или напиши время в формате ЧЧ:ММ.",
+            task_time_keyboard(),
+        )
+
+    @router.message(PlannerStates.waiting_for_task_date, F.text == TOMORROW_TEXT)
+    async def task_date_tomorrow(message: Message, state: FSMContext) -> None:
+        user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
+        due_date = await get_user_today(user.id) + timedelta(days=1)
+        await state.update_data(task_date=due_date.isoformat())
         await state.set_state(PlannerStates.waiting_for_task_time)
         await bot_app.send_flow_prompt(
             message.chat.id,
@@ -551,7 +635,7 @@ def build_router(bot_app: BotApplication) -> Router:
         await state.set_state(PlannerStates.waiting_for_task_date)
         await bot_app.send_flow_prompt(
             message.chat.id,
-            "На какую дату поставить задачу?\nНажми «Сегодня» или напиши дату в формате ДД.ММ.",
+            "На какую дату поставить задачу?\nНажми «Сегодня» или «Завтра», либо напиши дату в формате ДД.ММ.",
             task_date_keyboard(),
         )
 
@@ -606,7 +690,7 @@ def build_router(bot_app: BotApplication) -> Router:
         await state.set_state(PlannerStates.waiting_for_event_date)
         await bot_app.send_flow_prompt(
             message.chat.id,
-            "На какую дату поставить событие?\nНажми «Сегодня» или напиши дату в формате ДД.ММ.",
+            "На какую дату поставить событие?\nНажми «Сегодня» или «Завтра», либо напиши дату в формате ДД.ММ.",
             event_date_keyboard(),
         )
 
@@ -623,6 +707,19 @@ def build_router(bot_app: BotApplication) -> Router:
         bot_app.track_user_message(message.chat.id, message.message_id)
         today_value = await get_user_today(user.id)
         await state.update_data(event_date=today_value.isoformat())
+        await state.set_state(PlannerStates.waiting_for_event_time)
+        await bot_app.send_flow_prompt(
+            message.chat.id,
+            "Во сколько начинается событие?\nНапиши время в формате ЧЧ:ММ.",
+            event_time_keyboard(),
+        )
+
+    @router.message(PlannerStates.waiting_for_event_date, F.text == TOMORROW_TEXT)
+    async def event_date_tomorrow(message: Message, state: FSMContext) -> None:
+        user = await ensure_message_user(message)
+        bot_app.track_user_message(message.chat.id, message.message_id)
+        event_date = await get_user_today(user.id) + timedelta(days=1)
+        await state.update_data(event_date=event_date.isoformat())
         await state.set_state(PlannerStates.waiting_for_event_time)
         await bot_app.send_flow_prompt(
             message.chat.id,
@@ -659,7 +756,7 @@ def build_router(bot_app: BotApplication) -> Router:
         await state.set_state(PlannerStates.waiting_for_event_date)
         await bot_app.send_flow_prompt(
             message.chat.id,
-            "На какую дату поставить событие?\nНажми «Сегодня» или напиши дату в формате ДД.ММ.",
+            "На какую дату поставить событие?\nНажми «Сегодня» или «Завтра», либо напиши дату в формате ДД.ММ.",
             event_date_keyboard(),
         )
 
