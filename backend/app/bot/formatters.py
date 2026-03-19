@@ -22,8 +22,8 @@ MONTHS_RU = {
 }
 
 
-def safe_text(value: str) -> str:
-    return escape(value, quote=False)
+def safe_text(value: str | None) -> str:
+    return escape(value or "", quote=False)
 
 
 def format_pretty_date(value) -> str:
@@ -34,25 +34,30 @@ def format_pretty_time(value) -> str:
     return value.strftime("%H:%M")
 
 
-def format_task_deadline(task) -> str:
-    if not task.due_date:
-        return ""
-    deadline = format_pretty_date(task.due_date)
-    if task.due_time:
-        deadline += f" • {format_pretty_time(task.due_time)}"
-    return deadline
+def build_task_line(task, *, overdue: bool = False, completed: bool = False) -> str:
+    prefix = ""
+    if overdue and task.due_date:
+        prefix = format_pretty_date(task.due_date)
+        if task.due_time:
+            prefix += f" {format_pretty_time(task.due_time)}"
+    elif task.due_time:
+        prefix = format_pretty_time(task.due_time)
+
+    text = safe_text(task.title)
+    line = f"• {prefix} — {text}" if prefix else f"• {text}"
+    if completed:
+        return f"<s>{line}</s>"
+    return line
 
 
 def render_today_dashboard(dashboard: TodayDashboard) -> str:
     lines = ["✨ План на сегодня", format_pretty_date(dashboard.date), ""]
 
-    if not dashboard.events and not dashboard.tasks and not dashboard.overdue_tasks:
+    if not dashboard.events and not dashboard.tasks and not dashboard.overdue_tasks and not dashboard.completed_tasks:
         lines.extend(
             [
                 "🌿 Спокойный день",
                 "Сегодня без задач, событий и просрочки.",
-                "",
-                "📲 Всё редактирование — в Planner.",
             ]
         )
         return "\n".join(lines)
@@ -70,13 +75,11 @@ def render_today_dashboard(dashboard: TodayDashboard) -> str:
             [
                 "⏰ Ближайшее",
                 f"{format_pretty_time(dashboard.next_event.start_time)} — {safe_text(dashboard.next_event.title)}",
-                "",
             ]
         )
     else:
-        lines.extend(["🌿 Ближайших событий нет", ""])
+        lines.append("🌿 Ближайших событий нет")
 
-    lines.append("📲 Всё редактирование — в Planner.")
     return "\n".join(lines)
 
 
@@ -88,26 +91,32 @@ def render_today_events(dashboard: TodayDashboard) -> str:
     return "\n".join(lines)
 
 
-def render_today_task_card(task, *, overdue: bool = False) -> str:
-    title = "⚠️ Просроченная задача" if overdue else "🗂 Задача"
-    lines = [title, safe_text(task.title)]
-    if overdue:
-        deadline = format_task_deadline(task)
-        lines.append(f"Срок был: {deadline}" if deadline else "Срок уже прошёл.")
-    elif task.due_time:
-        lines.append(f"На сегодня • {format_pretty_time(task.due_time)}")
-    else:
-        lines.append("Сегодня без точного времени")
+def render_today_tasks(dashboard: TodayDashboard) -> str:
+    lines = ["🗂 Задачи"]
+
+    if dashboard.tasks:
+        lines.extend(build_task_line(task) for task in dashboard.tasks[:8])
+
+    if dashboard.completed_tasks:
+        if len(lines) > 1:
+            lines.append("")
+        lines.append("✅ Выполнено")
+        lines.extend(build_task_line(task, completed=True) for task in dashboard.completed_tasks[:8])
+
+    if dashboard.overdue_tasks:
+        if len(lines) > 1:
+            lines.append("")
+        lines.append("⚠️ Просрочено")
+        lines.extend(build_task_line(task, overdue=True) for task in dashboard.overdue_tasks[:8])
+
+    if len(lines) == 1:
+        lines.append("Сегодня задач нет.")
+
     return "\n".join(lines)
 
 
-def render_inbox(items) -> str:
-    if not items:
-        return "📭 Inbox пуст."
-    lines = ["📝 Inbox"]
-    for item in items[:10]:
-        lines.append(f"• {safe_text(item.text)}")
-    return "\n".join(lines)
+def render_planner_handoff(title: str, body: str) -> str:
+    return "\n".join([safe_text(title), safe_text(body)])
 
 
 def render_settings(settings: UserSettingsOut) -> str:
@@ -117,25 +126,4 @@ def render_settings(settings: UserSettingsOut) -> str:
         f"Утренняя сводка: {'вкл' if settings.morning_digest_enabled else 'выкл'} в {settings.morning_digest_time.strftime('%H:%M')}\n"
         f"Напоминания: {'вкл' if settings.notifications_enabled else 'выкл'}\n"
         f"Напоминание по умолчанию: {settings.default_reminder_minutes} мин"
-    )
-
-
-def render_planner_handoff(title: str, body: str) -> str:
-    return "\n".join(
-        [
-            safe_text(title),
-            safe_text(body),
-            "",
-            "📲 Всё создание и редактирование теперь в Planner.",
-        ]
-    )
-
-
-def help_text(webapp_url: str | None) -> str:
-    url_line = f"\nPlanner: {safe_text(webapp_url)}" if webapp_url else ""
-    return (
-        "✨ Planner Help\n"
-        "Бот показывает день, присылает напоминания и помогает быстро отмечать выполнение.\n"
-        "Всё создание и редактирование — в Mini App."
-        f"{url_line}"
     )

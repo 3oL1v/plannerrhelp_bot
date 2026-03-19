@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, WebAppInfo
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 MENU_TODAY_TEXT = "✨ Сегодня"
@@ -28,17 +27,34 @@ def build_inline_planner_button(webapp_url: str | None, text: str = MENU_PLANNER
     return InlineKeyboardButton(text=text, url=webapp_url)
 
 
-def main_menu_keyboard(webapp_url: str | None) -> ReplyKeyboardMarkup:
-    rows = [
-        [KeyboardButton(text=MENU_TODAY_TEXT)],
-    ]
-    return build_reply_keyboard(rows)
+def main_menu_keyboard(_webapp_url: str | None) -> ReplyKeyboardMarkup:
+    return build_reply_keyboard([[KeyboardButton(text=MENU_TODAY_TEXT)]])
 
 
-def add_menu_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🗂 В Planner", callback_data="planner:handoff")
-    return builder.as_markup()
+def planner_handoff_keyboard(webapp_url: str | None) -> InlineKeyboardMarkup | None:
+    planner_button = build_inline_planner_button(webapp_url, text="📲 Открыть Planner")
+    if not planner_button:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[planner_button]])
+
+
+def build_task_complete_label(title: str, *, overdue: bool = False) -> str:
+    label = title.strip() or "Задача"
+    if len(label) > 24:
+        label = f"{label[:21].rstrip()}..."
+    prefix = "⚠️ " if overdue else "✅ "
+    return f"{prefix}{label}"
+
+
+def today_tasks_keyboard(tasks, overdue_tasks) -> InlineKeyboardMarkup | None:
+    rows: list[list[InlineKeyboardButton]] = []
+    for task in tasks[:8]:
+        rows.append([InlineKeyboardButton(text=build_task_complete_label(task.title), callback_data=f"task:complete:{task.id}")])
+    for task in overdue_tasks[:8]:
+        rows.append([InlineKeyboardButton(text=build_task_complete_label(task.title, overdue=True), callback_data=f"task:complete:{task.id}")])
+    if not rows:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def flow_cancel_keyboard() -> ReplyKeyboardMarkup:
@@ -85,32 +101,3 @@ def event_duration_keyboard() -> ReplyKeyboardMarkup:
 
 def manual_input_keyboard() -> ReplyKeyboardMarkup:
     return build_reply_keyboard([[KeyboardButton(text=BACK_TEXT), KeyboardButton(text=CANCEL_TEXT)]])
-
-
-def task_actions_keyboard(task_id: int, webapp_url: str | None) -> InlineKeyboardMarkup:
-    row = [InlineKeyboardButton(text="✅ Выполнить", callback_data=f"task:complete:{task_id}")]
-    planner_button = build_inline_planner_button(webapp_url)
-    if planner_button:
-        row.append(planner_button)
-    return InlineKeyboardMarkup(inline_keyboard=[row])
-
-
-def planner_handoff_keyboard(webapp_url: str | None) -> InlineKeyboardMarkup | None:
-    planner_button = build_inline_planner_button(webapp_url, text="📲 Открыть Planner")
-    if not planner_button:
-        return None
-    return InlineKeyboardMarkup(inline_keyboard=[[planner_button]])
-
-
-def settings_keyboard(morning_digest_enabled: bool, notifications_enabled: bool) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(
-        text=f"Утренняя сводка: {'Вкл' if morning_digest_enabled else 'Выкл'}",
-        callback_data="settings:toggle_digest",
-    )
-    builder.button(
-        text=f"Напоминания: {'Вкл' if notifications_enabled else 'Выкл'}",
-        callback_data="settings:toggle_notifications",
-    )
-    builder.adjust(1)
-    return builder.as_markup()

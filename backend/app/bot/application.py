@@ -11,16 +11,24 @@ from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
 from aiogram.filters import CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand, BotCommandScopeAllPrivateChats, CallbackQuery, MenuButtonCommands, MenuButtonWebApp, Message, Update, WebAppInfo
+from aiogram.types import BotCommand, BotCommandScopeAllPrivateChats, CallbackQuery, InlineKeyboardMarkup, MenuButtonCommands, MenuButtonWebApp, Message, Update, WebAppInfo
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.bot.formatters import render_planner_handoff, render_today_dashboard, render_today_events, render_today_task_card
-from app.bot.keyboards import CANCEL_TEXT, MENU_PLANNER_TEXT, MENU_TODAY_TEXT, TODAY_TEXT, main_menu_keyboard, planner_handoff_keyboard, task_actions_keyboard
+from app.bot.formatters import render_planner_handoff, render_today_dashboard, render_today_events, render_today_tasks
+from app.bot.keyboards import CANCEL_TEXT, MENU_PLANNER_TEXT, MENU_TODAY_TEXT, TODAY_TEXT, main_menu_keyboard, planner_handoff_keyboard, today_tasks_keyboard
 from app.config import Settings
 from app.services.dashboard import build_today_dashboard
 from app.services.events import get_event
 from app.services.tasks import complete_task, get_task
 from app.services.users import ensure_user
+
+
+@dataclass
+class ChatViewState:
+    summary_message_id: int | None = None
+    events_message_id: int | None = None
+    tasks_message_id: int | None = None
+    handoff_message_id: int | None = None
 
 
 @dataclass
@@ -87,9 +95,7 @@ class BotApplication:
         if not self.bot:
             return
         await self.bot.set_my_commands(
-            commands=[
-                BotCommand(command="start", description="План на сегодня"),
-            ],
+            commands=[BotCommand(command="start", description="План на сегодня")],
             scope=BotCommandScopeAllPrivateChats(),
         )
         if self.settings.effective_webapp_url and self.settings.effective_webapp_url.startswith("https://"):
@@ -106,22 +112,23 @@ class BotApplication:
         if not self.bot:
             return
         try:
-            await asyncio.wait_for(
-                self.bot.delete_webhook(drop_pending_updates=False),
-                timeout=5,
-            )
+            await asyncio.wait_for(self.bot.delete_webhook(drop_pending_updates=False), timeout=5)
         except (asyncio.TimeoutError, TelegramNetworkError):
             return
 
 
 def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSession]) -> Router:
     router = Router()
+    chat_views: dict[int, ChatViewState] = {}
 
     def menu_keyboard():
         return main_menu_keyboard(settings.effective_webapp_url)
 
-    def planner_markup():
-        return planner_handoff_keyboard(settings.effective_webapp_url) or menu_keyboard()
+    def planner_markup() -> InlineKeyboardMarkup | None:
+        return planner_handoff_keyboard(settings.effective_webapp_url)
+
+    def get_chat_view(chat_id: int) -> ChatViewState:
+        return chat_views.setdefault(chat_id, ChatViewState())
 
     async def ensure_message_user(message: Message):
         tg_user = message.from_user
@@ -147,46 +154,110 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
                 last_name=tg_user.last_name,
             )
 
-    async def send_planner_handoff(message: Message, title: str, body: str) -> None:
-        await message.answer(render_planner_handoff(title, body), reply_markup=planner_markup())
+    async def delete_slot(bot: Bot, chat_id: int, slot: str) -> None:
+        view = get_chat_view(chat_id)
+        message_id = getattr(view, slot)
+        if not message_id:
+            return
+        with contextlib.suppress(TelegramBadRequest, TelegramNetworkError):
+            await bot.delete_message(chat_id=chat_id, message_id=message_id)
+        setattr(view, slot, None)
 
-    async def send_today(message: Message, user_id: int) -> None:
+    async def upsert_slot(
+        bot: Bot,
+        chat_id: int,
+        slot: str,
+        text: str,
+        *,
+        send_markup=None,
+        edit_markup: InlineKeyboardMarkup | None = None,
+    ) -> int:
+        view = get_chat_view(chat_id)
+        message_id = getattr(view, slot)
+        if message_id:
+            try:
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=text,
+                    reply_markup=edit_markup,
+                )
+                return message_id
+            except TelegramBadRequest as exc:
+                if "message is not modified" in str(exc).lower():
+                    return message_id
+            except TelegramNetworkError:
+                pass
+
+        sent = await bot.send_message(chat_id=chat_id, text=text, reply_markup=send_markup)
+        setattr(view, slot, sent.message_id)
+        return sent.message_id
+
+    async def send_planner_handoff(bot: Bot, chat_id: int, title: str, body: str) -> None:
+        markup = planner_markup()
+        await upsert_slot(
+            bot,
+            chat_id,
+            "handoff_message_id",
+            render_planner_handoff(title, body),
+            send_markup=markup,
+            edit_markup=markup,
+        )
+
+    async def refresh_today_view(bot: Bot, chat_id: int, user_id: int) -> None:
         async with session_factory() as session:
             dashboard = await build_today_dashboard(session, user_id)
 
-        await message.answer(render_today_dashboard(dashboard), reply_markup=menu_keyboard())
+        await delete_slot(bot, chat_id, "handoff_message_id")
+        await upsert_slot(
+            bot,
+            chat_id,
+            "summary_message_id",
+            render_today_dashboard(dashboard),
+            send_markup=menu_keyboard(),
+        )
 
         if dashboard.events:
-            await message.answer(render_today_events(dashboard))
-
-        for task in dashboard.overdue_tasks[:5]:
-            await message.answer(
-                render_today_task_card(task, overdue=True),
-                reply_markup=task_actions_keyboard(task.id, settings.effective_webapp_url),
+            await upsert_slot(
+                bot,
+                chat_id,
+                "events_message_id",
+                render_today_events(dashboard),
             )
+        else:
+            await delete_slot(bot, chat_id, "events_message_id")
 
-        for task in dashboard.tasks[:5]:
-            await message.answer(
-                render_today_task_card(task),
-                reply_markup=task_actions_keyboard(task.id, settings.effective_webapp_url),
+        has_tasks_block = bool(dashboard.tasks or dashboard.completed_tasks or dashboard.overdue_tasks)
+        if has_tasks_block:
+            tasks_markup = today_tasks_keyboard(dashboard.tasks, dashboard.overdue_tasks)
+            await upsert_slot(
+                bot,
+                chat_id,
+                "tasks_message_id",
+                render_today_tasks(dashboard),
+                send_markup=tasks_markup,
+                edit_markup=tasks_markup,
             )
+        else:
+            await delete_slot(bot, chat_id, "tasks_message_id")
 
     @router.message(CommandStart())
     async def start_handler(message: Message, state: FSMContext) -> None:
         await state.clear()
         user = await ensure_message_user(message)
-        await send_today(message, user.id)
+        await refresh_today_view(message.bot, message.chat.id, user.id)
 
     @router.message(StateFilter(None), F.text.in_({MENU_TODAY_TEXT, TODAY_TEXT}))
     async def today_handler(message: Message) -> None:
         user = await ensure_message_user(message)
-        await send_today(message, user.id)
+        await refresh_today_view(message.bot, message.chat.id, user.id)
 
     @router.message(StateFilter(None), F.text == "+")
     async def plus_handler(message: Message) -> None:
         await ensure_message_user(message)
         await send_planner_handoff(
-            message,
+            message.bot,
+            message.chat.id,
             "✨ Всё управление — в Planner",
             "Создавай задачи, события и заметки прямо в Mini App.",
         )
@@ -195,7 +266,8 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
     async def inbox_handler(message: Message) -> None:
         await ensure_message_user(message)
         await send_planner_handoff(
-            message,
+            message.bot,
+            message.chat.id,
             "📝 Inbox теперь в Planner",
             "Все заметки и конвертация в задачи или события живут в Mini App.",
         )
@@ -204,7 +276,8 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
     async def settings_handler(message: Message) -> None:
         await ensure_message_user(message)
         await send_planner_handoff(
-            message,
+            message.bot,
+            message.chat.id,
             "⚙️ Настройки — в Planner",
             "Часовой пояс, утреннюю сводку и напоминания удобнее менять в Mini App.",
         )
@@ -213,7 +286,8 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
     async def help_handler(message: Message) -> None:
         await ensure_message_user(message)
         await send_planner_handoff(
-            message,
+            message.bot,
+            message.chat.id,
             "✨ Planner Help",
             "Бот показывает день, присылает напоминания и помогает быстро отмечать выполнение.",
         )
@@ -223,29 +297,29 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
         await ensure_message_user(message)
         if settings.effective_webapp_url:
             await send_planner_handoff(
-                message,
+                message.bot,
+                message.chat.id,
                 "📲 Planner под рукой",
                 f"Открывай Mini App здесь: {settings.effective_webapp_url}",
             )
             return
-        await message.answer("📲 Planner пока недоступен. Сначала укажи WEBAPP_URL.", reply_markup=menu_keyboard())
+        await upsert_slot(message.bot, message.chat.id, "handoff_message_id", "📲 Planner пока недоступен. Сначала укажи WEBAPP_URL.")
 
     @router.message(StateFilter("*"), F.text == CANCEL_TEXT)
     async def cancel_state_handler(message: Message, state: FSMContext) -> None:
         await state.clear()
-        await message.answer("Действие отменено.", reply_markup=menu_keyboard())
+        await upsert_slot(message.bot, message.chat.id, "handoff_message_id", "Действие отменено.")
 
     @router.callback_query(F.data.in_({"planner:handoff", "add:task", "add:event", "add:note"}))
     async def planner_handoff_callback(callback: CallbackQuery, state: FSMContext) -> None:
         await state.clear()
         await ensure_callback_user(callback)
         if callback.message:
-            await callback.message.answer(
-                render_planner_handoff(
-                    "📲 Всё управление — в Planner",
-                    "Создание, редактирование и переносы теперь живут в Mini App.",
-                ),
-                reply_markup=planner_markup(),
+            await send_planner_handoff(
+                callback.bot,
+                callback.message.chat.id,
+                "📲 Всё управление — в Planner",
+                "Создание, редактирование и переносы теперь живут в Mini App.",
             )
         await callback.answer()
 
@@ -254,36 +328,34 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
         _, action, raw_id = (callback.data or "").split(":")
         task_id = int(raw_id)
         user = await ensure_callback_user(callback)
+        chat_id = callback.message.chat.id if callback.message else callback.from_user.id
+
         async with session_factory() as session:
             task = await get_task(session, user.id, task_id)
             if task is None:
                 await callback.answer("Задача не найдена", show_alert=True)
                 return
-
             if action == "complete":
                 await complete_task(session, task)
             else:
                 await state.clear()
-                if callback.message:
-                    await callback.message.answer(
-                        render_planner_handoff(
-                            "🗂 Управление задачей — в Planner",
-                            "Перенос, удаление и все правки теперь делаются в Mini App.",
-                        ),
-                        reply_markup=planner_markup(),
-                    )
+                await send_planner_handoff(
+                    callback.bot,
+                    chat_id,
+                    "🗂 Управление задачей — в Planner",
+                    "Перенос, удаление и все правки теперь делаются в Mini App.",
+                )
                 await callback.answer()
                 return
 
         await state.clear()
+        await refresh_today_view(callback.bot, chat_id, user.id)
         if callback.message:
-            with contextlib.suppress(TelegramBadRequest):
-                await callback.message.edit_reply_markup(reply_markup=None)
-            await callback.message.answer(
-                f"✅ Готово\n{task.title}",
-                reply_markup=menu_keyboard(),
-            )
-        await callback.answer()
+            current_tasks_id = get_chat_view(chat_id).tasks_message_id
+            if callback.message.message_id != current_tasks_id:
+                with contextlib.suppress(TelegramBadRequest, TelegramNetworkError):
+                    await callback.message.delete()
+        await callback.answer("Выполнено")
 
     @router.callback_query(F.data.startswith("event:"))
     async def event_callbacks(callback: CallbackQuery, state: FSMContext) -> None:
@@ -298,12 +370,11 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
 
         await state.clear()
         if callback.message:
-            await callback.message.answer(
-                render_planner_handoff(
-                    "📍 Управление событием — в Planner",
-                    "Перенос, удаление и редактирование событий теперь делаются в Mini App.",
-                ),
-                reply_markup=planner_markup(),
+            await send_planner_handoff(
+                callback.bot,
+                callback.message.chat.id,
+                "📍 Управление событием — в Planner",
+                "Перенос, удаление и редактирование событий теперь делаются в Mini App.",
             )
         await callback.answer()
 
@@ -312,12 +383,11 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
         await ensure_callback_user(callback)
         await state.clear()
         if callback.message:
-            await callback.message.answer(
-                render_planner_handoff(
-                    "⚙️ Настройки — в Planner",
-                    "Часовой пояс, утреннюю сводку и напоминания лучше менять в Mini App.",
-                ),
-                reply_markup=planner_markup(),
+            await send_planner_handoff(
+                callback.bot,
+                callback.message.chat.id,
+                "⚙️ Настройки — в Planner",
+                "Часовой пояс, утреннюю сводку и напоминания лучше менять в Mini App.",
             )
         await callback.answer()
 
@@ -325,7 +395,8 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
     async def free_text_handler(message: Message) -> None:
         await ensure_message_user(message)
         await send_planner_handoff(
-            message,
+            message.bot,
+            message.chat.id,
             "📝 Быстрые мысли — в Planner",
             "Для заметок, задач и событий открой Mini App: там больше свободы и меньше лишних шагов.",
         )

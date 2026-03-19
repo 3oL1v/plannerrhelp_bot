@@ -12,6 +12,7 @@ class TodayDashboard(BaseModel):
     next_event: EventOut | None
     events: list[EventOut]
     tasks: list[TaskOut]
+    completed_tasks: list[TaskOut]
     overdue_tasks: list[TaskOut]
     inbox_preview: list[InboxOut]
 

@@ -25,6 +25,11 @@ async def build_today_dashboard(session: AsyncSession, user_id: int) -> TodayDas
         .where(Task.user_id == user_id, Task.deleted_at.is_(None), Task.status == "open", Task.due_date == today)
         .order_by(Task.due_time.is_(None), Task.due_time, Task.created_at.desc())
     )
+    completed_result = await session.execute(
+        select(Task)
+        .where(Task.user_id == user_id, Task.deleted_at.is_(None), Task.status == "completed", Task.due_date == today)
+        .order_by(Task.completed_at.desc().nullslast(), Task.updated_at.desc())
+    )
     overdue_result = await session.execute(
         select(Task)
         .where(Task.user_id == user_id, Task.deleted_at.is_(None), Task.status == "open", Task.due_date.is_not(None), Task.due_date < today)
@@ -39,6 +44,7 @@ async def build_today_dashboard(session: AsyncSession, user_id: int) -> TodayDas
 
     events = list(events_result.scalars().all())
     tasks = list(tasks_result.scalars().all())
+    completed_tasks = list(completed_result.scalars().all())
     overdue = list(overdue_result.scalars().all())
     inbox = list(inbox_result.scalars().all())
 
@@ -47,6 +53,7 @@ async def build_today_dashboard(session: AsyncSession, user_id: int) -> TodayDas
         next_event=events[0] if events else None,
         events=events,
         tasks=tasks,
+        completed_tasks=completed_tasks,
         overdue_tasks=overdue,
         inbox_preview=inbox,
     )
@@ -116,8 +123,6 @@ async def build_morning_digest_text(session: AsyncSession, user_id: int, timezon
             [
                 "🌿 На сегодня спокойно",
                 "Задач, событий и просрочки нет.",
-                "",
-                "📲 Всё остальное — в Planner.",
             ]
         )
         return "\n".join(parts)
@@ -140,5 +145,4 @@ async def build_morning_digest_text(session: AsyncSession, user_id: int, timezon
             ]
         )
 
-    parts.extend(["", "📲 Если план изменился — открой Planner."])
     return "\n".join(parts)
