@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.bot_sync import refresh_bot_today_view
 from app.api.deps import get_current_user, get_db_session
 from app.models.entities import User
 from app.schemas.common import EventOut, InboxOut, TaskOut
@@ -62,6 +63,7 @@ async def remove_inbox(
 
 @router.post("/{inbox_id}/convert-to-task", response_model=TaskOut)
 async def inbox_to_task(
+    request: Request,
     inbox_id: int,
     payload: InboxConvertToTask,
     user: User = Depends(get_current_user),
@@ -70,11 +72,14 @@ async def inbox_to_task(
     item = await get_inbox_item(session, user.id, inbox_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Inbox item not found")
-    return await convert_inbox_to_task(session, user.id, item, payload)
+    task = await convert_inbox_to_task(session, user.id, item, payload)
+    await refresh_bot_today_view(request, user.id)
+    return task
 
 
 @router.post("/{inbox_id}/convert-to-event", response_model=EventOut)
 async def inbox_to_event_route(
+    request: Request,
     inbox_id: int,
     payload: InboxConvertToEvent,
     user: User = Depends(get_current_user),
@@ -83,4 +88,6 @@ async def inbox_to_event_route(
     item = await get_inbox_item(session, user.id, inbox_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Inbox item not found")
-    return await convert_inbox_to_event(session, user.id, item, payload)
+    event = await convert_inbox_to_event(session, user.id, item, payload)
+    await refresh_bot_today_view(request, user.id)
+    return event

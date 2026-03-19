@@ -8,6 +8,7 @@ MENU_PLANNER_TEXT = "📲 Planner"
 TODAY_TEXT = "Сегодня"
 TOMORROW_TEXT = "Завтра"
 NO_DATE_TEXT = "Без даты"
+NO_TIME_TEXT = "Без времени"
 CUSTOM_DATE_TEXT = "Ввести свою"
 CUSTOM_DURATION_TEXT = "Ввести свою"
 BACK_TEXT = "Назад"
@@ -28,7 +29,18 @@ def build_inline_planner_button(webapp_url: str | None, text: str = MENU_PLANNER
 
 
 def main_menu_keyboard(_webapp_url: str | None) -> ReplyKeyboardMarkup:
-    return build_reply_keyboard([[KeyboardButton(text=MENU_TODAY_TEXT)]])
+    return build_reply_keyboard([[KeyboardButton(text=MENU_TODAY_TEXT), KeyboardButton(text="+")]])
+
+
+def add_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Задача", callback_data="add:task"),
+                InlineKeyboardButton(text="Событие", callback_data="add:event"),
+            ]
+        ]
+    )
 
 
 def planner_handoff_keyboard(webapp_url: str | None) -> InlineKeyboardMarkup | None:
@@ -57,36 +69,39 @@ def today_tasks_keyboard(tasks, overdue_tasks) -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def flow_cancel_keyboard() -> ReplyKeyboardMarkup:
-    return build_reply_keyboard([[KeyboardButton(text=CANCEL_TEXT)]])
-
-
 def task_date_keyboard() -> ReplyKeyboardMarkup:
     return build_reply_keyboard(
         [
-            [KeyboardButton(text=TODAY_TEXT), KeyboardButton(text=TOMORROW_TEXT)],
-            [KeyboardButton(text=NO_DATE_TEXT), KeyboardButton(text=CUSTOM_DATE_TEXT)],
+            [KeyboardButton(text=TODAY_TEXT)],
+            [KeyboardButton(text=BACK_TEXT), KeyboardButton(text=CANCEL_TEXT)],
+        ]
+    )
+
+
+def event_date_keyboard() -> ReplyKeyboardMarkup:
+    return build_reply_keyboard(
+        [
+            [KeyboardButton(text=TODAY_TEXT)],
             [KeyboardButton(text=BACK_TEXT), KeyboardButton(text=CANCEL_TEXT)],
         ]
     )
 
 
 def task_time_keyboard() -> ReplyKeyboardMarkup:
-    return build_reply_keyboard([[KeyboardButton(text=BACK_TEXT)]])
-
-
-def event_date_keyboard() -> ReplyKeyboardMarkup:
     return build_reply_keyboard(
         [
-            [KeyboardButton(text=TODAY_TEXT), KeyboardButton(text=TOMORROW_TEXT)],
-            [KeyboardButton(text=CUSTOM_DATE_TEXT)],
+            [KeyboardButton(text=NO_TIME_TEXT)],
             [KeyboardButton(text=BACK_TEXT), KeyboardButton(text=CANCEL_TEXT)],
         ]
     )
 
 
 def event_time_keyboard() -> ReplyKeyboardMarkup:
-    return build_reply_keyboard([[KeyboardButton(text=BACK_TEXT)]])
+    return build_reply_keyboard([[KeyboardButton(text=BACK_TEXT), KeyboardButton(text=CANCEL_TEXT)]])
+
+
+def flow_cancel_keyboard() -> ReplyKeyboardMarkup:
+    return build_reply_keyboard([[KeyboardButton(text=CANCEL_TEXT)]])
 
 
 def event_duration_keyboard() -> ReplyKeyboardMarkup:
