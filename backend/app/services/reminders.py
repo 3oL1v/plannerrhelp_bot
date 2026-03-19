@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.entities import Event, Reminder, ReminderEntityType, ReminderStatus, Task, User, UserSettings
-from app.utils.datetime import combine_user_datetime, today_in_timezone, to_user_timezone, utc_now
+from app.utils.datetime import combine_user_datetime, to_user_timezone, utc_now
 
 
 async def cancel_entity_reminders(session: AsyncSession, user_id: int, entity_type: str, entity_id: int) -> None:
@@ -90,11 +90,38 @@ async def build_reminder_text(session: AsyncSession, reminder: Reminder) -> str 
         task = await session.get(Task, reminder.entity_id)
         if not task or task.deleted_at or task.status != "open":
             return None
-        return f"Напоминание по задаче: {task.title}"
+
+        when_line = "Сегодня без точного времени"
+        if task.due_date and task.due_time:
+            when_line = f"Срок: {task.due_date.isoformat()} • {task.due_time.strftime('%H:%M')}"
+        elif task.due_date:
+            when_line = f"Срок: {task.due_date.isoformat()}"
+
+        return "\n".join(
+            [
+                "⏰ Напоминание",
+                "",
+                task.title,
+                "",
+                when_line,
+                "📲 Если нужно что-то поменять — открой Planner.",
+            ]
+        )
+
     event = await session.get(Event, reminder.entity_id)
     if not event or event.deleted_at or event.status != "planned":
         return None
-    return f"Напоминание о событии: {event.title}"
+
+    return "\n".join(
+        [
+            "📍 Скоро событие",
+            "",
+            event.title,
+            "",
+            f"Старт: {event.event_date.isoformat()} • {event.start_time.strftime('%H:%M')}",
+            "📲 Если слот поменялся — открой Planner.",
+        ]
+    )
 
 
 async def dispatch_morning_digests(

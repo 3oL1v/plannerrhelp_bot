@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.entities import Event, InboxItem, Task
 from app.schemas.dashboard import TodayDashboard, WeekDashboard, WeekDaySummary
 from app.services.settings import get_settings_for_user
-from app.utils.datetime import today_in_timezone, utc_now, week_bounds
+from app.utils.datetime import today_in_timezone, week_bounds
 
 
 async def build_today_dashboard(session: AsyncSession, user_id: int) -> TodayDashboard:
@@ -105,15 +105,40 @@ async def build_week_dashboard(session: AsyncSession, user_id: int) -> WeekDashb
 
 async def build_morning_digest_text(session: AsyncSession, user_id: int, timezone_name: str) -> str:
     dashboard = await build_today_dashboard(session, user_id)
-    parts = [f"Доброе утро. На {dashboard.date.isoformat()}:"]
+    parts = [
+        "☀️ Доброе утро",
+        dashboard.date.strftime("%d.%m.%Y"),
+        "",
+    ]
+
+    if not dashboard.events and not dashboard.tasks and not dashboard.overdue_tasks:
+        parts.extend(
+            [
+                "🌿 На сегодня спокойно",
+                "Задач, событий и просрочки нет.",
+                "",
+                "📲 Всё остальное — в Planner.",
+            ]
+        )
+        return "\n".join(parts)
+
+    parts.extend(
+        [
+            "🌤 На сегодня",
+            f"• задач: {len(dashboard.tasks)}",
+            f"• событий: {len(dashboard.events)}",
+            f"• просрочено: {len(dashboard.overdue_tasks)}",
+        ]
+    )
+
     if dashboard.next_event:
-        parts.append(f"Ближайшее событие: {dashboard.next_event.title} в {dashboard.next_event.start_time.strftime('%H:%M')}")
-    if dashboard.events:
-        parts.append(f"Событий сегодня: {len(dashboard.events)}")
-    if dashboard.tasks:
-        parts.append(f"Задач на сегодня: {len(dashboard.tasks)}")
-    if dashboard.overdue_tasks:
-        parts.append(f"Просрочено: {len(dashboard.overdue_tasks)}")
-    if len(parts) == 1:
-        parts.append("На сегодня пусто.")
+        parts.extend(
+            [
+                "",
+                "⏰ Ближайший слот",
+                f"{dashboard.next_event.start_time.strftime('%H:%M')} — {dashboard.next_event.title}",
+            ]
+        )
+
+    parts.extend(["", "📲 Если план изменился — открой Planner."])
     return "\n".join(parts)
