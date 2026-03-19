@@ -404,7 +404,6 @@ def build_router(bot_app: BotApplication) -> Router:
         await state.clear()
         user = await ensure_message_user(message)
         bot_app.clear_tracked_user_messages(message.chat.id)
-        await bot_app.reset_today_slots(message.chat.id, user.id)
         await bot_app.refresh_today_view(message.chat.id, user.id)
 
     @router.message(StateFilter(None), F.text.in_({MENU_TODAY_TEXT, TODAY_TEXT}))
