@@ -233,6 +233,14 @@ label {
   color: #2d7a34;
 }
 
+.completed-row {
+  justify-content: flex-start;
+}
+
+.completed-footer {
+  justify-content: flex-end;
+}
+
 .bottom-nav {
   position: fixed;
   left: 50%;

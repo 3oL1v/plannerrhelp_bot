@@ -9,7 +9,6 @@ import { usePageRefresh } from "../hooks/usePageRefresh";
 export function TodayPage() {
   const [data, setData] = useState<TodayDashboard | null>(null);
   const [taskTab, setTaskTab] = useState<"active" | "completed">("active");
-  const [showCompletedList, setShowCompletedList] = useState(false);
   const [clearingCompleted, setClearingCompleted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +40,6 @@ export function TodayPage() {
     setClearingCompleted(true);
     try {
       await clearTodayCompletedList();
-      setShowCompletedList(false);
       await load(false);
     } catch (err) {
       setError((err as Error).message);
@@ -110,28 +108,16 @@ export function TodayPage() {
           <EmptyState>Выполненных задач пока нет.</EmptyState>
         ) : (
           <div className="stack compact">
-            <div className="completed-summary">
-              <strong>Выполнено сегодня</strong>
-              <span>{completedCount}</span>
-            </div>
-            <div className="actions compact-actions">
-              <button type="button" onClick={() => setShowCompletedList((current) => !current)}>
-                {showCompletedList ? "Скрыть список" : "Показать список"}
-              </button>
+            {data.completed_tasks.map((task) => (
+              <Link key={`completed-${task.id}`} to={`/tasks/${task.id}`} className="list-row completed-row">
+                <strong>✅ {task.title}</strong>
+              </Link>
+            ))}
+            <div className="actions compact-actions completed-footer">
               <button type="button" className="ghost" disabled={clearingCompleted} onClick={() => void onClearCompleted()}>
                 Очистить список
               </button>
             </div>
-            {showCompletedList ? (
-              <div className="stack compact">
-                {data.completed_tasks.map((task) => (
-                  <Link key={`completed-${task.id}`} to={`/tasks/${task.id}`} className="list-row completed-row">
-                    <strong>✅ {task.title}</strong>
-                    <span className="list-meta">\u00A0</span>
-                  </Link>
-                ))}
-              </div>
-            ) : null}
           </div>
         )}
       </section>
