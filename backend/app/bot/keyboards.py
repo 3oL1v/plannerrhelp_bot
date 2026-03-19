@@ -20,12 +20,6 @@ def build_reply_keyboard(rows: list[list[KeyboardButton]]) -> ReplyKeyboardMarku
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def build_planner_button(webapp_url: str | None) -> KeyboardButton:
-    if webapp_url and webapp_url.startswith("https://"):
-        return KeyboardButton(text=MENU_PLANNER_TEXT, web_app=WebAppInfo(url=webapp_url))
-    return KeyboardButton(text=MENU_PLANNER_TEXT)
-
-
 def build_inline_planner_button(webapp_url: str | None, text: str = MENU_PLANNER_TEXT) -> InlineKeyboardButton | None:
     if not webapp_url:
         return None
@@ -37,7 +31,6 @@ def build_inline_planner_button(webapp_url: str | None, text: str = MENU_PLANNER
 def main_menu_keyboard(webapp_url: str | None) -> ReplyKeyboardMarkup:
     rows = [
         [KeyboardButton(text=MENU_TODAY_TEXT)],
-        [build_planner_button(webapp_url)],
     ]
     return build_reply_keyboard(rows)
 
