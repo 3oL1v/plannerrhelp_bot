@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
@@ -101,27 +101,12 @@ def manual_input_keyboard() -> ReplyKeyboardMarkup:
     return build_reply_keyboard([[BACK_TEXT, CANCEL_TEXT]])
 
 
-def today_actions_keyboard(tasks, overdue_tasks) -> InlineKeyboardMarkup | None:
-    rows: list[list[InlineKeyboardButton]] = []
-    for task in [*tasks, *overdue_tasks]:
-        rows.append(
-            [
-                InlineKeyboardButton(text="Готово", callback_data=f"task:complete:{task.id}"),
-                InlineKeyboardButton(text="Перенести", callback_data=f"task:reschedule:{task.id}"),
-                InlineKeyboardButton(text="Удалить", callback_data=f"task:delete:{task.id}"),
-            ]
-        )
-    if not rows:
-        return None
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
 def task_actions_keyboard(task_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Выполнить", callback_data=f"task:complete:{task_id}")
     builder.button(text="Перенести", callback_data=f"task:reschedule:{task_id}")
     builder.button(text="Удалить", callback_data=f"task:delete:{task_id}")
-    builder.adjust(1)
+    builder.adjust(3)
     return builder.as_markup()
 
 
@@ -129,7 +114,7 @@ def event_actions_keyboard(event_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Перенести", callback_data=f"event:reschedule:{event_id}")
     builder.button(text="Удалить", callback_data=f"event:delete:{event_id}")
-    builder.adjust(1)
+    builder.adjust(2)
     return builder.as_markup()
 
 
