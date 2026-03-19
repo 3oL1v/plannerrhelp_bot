@@ -54,13 +54,13 @@ export function WeekPage() {
           {day.events.map((event) => (
             <Link key={`e-${event.id}`} to={`/events/${event.id}`} className="list-row">
               <strong>{event.title}</strong>
-              <span>{event.start_time.slice(0, 5)}</span>
+              <span className="list-meta">{event.start_time.slice(0, 5)}</span>
             </Link>
           ))}
           {day.tasks.map((task) => (
             <Link key={`t-${task.id}`} to={`/tasks/${task.id}`} className="list-row">
               <strong>{task.title}</strong>
-              <span>{task.due_time ? task.due_time.slice(0, 5) : "без времени"}</span>
+              <span className="list-meta">{task.due_time ? task.due_time.slice(0, 5) : "\u00A0"}</span>
             </Link>
           ))}
         </section>

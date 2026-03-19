@@ -49,6 +49,10 @@ export function getTask(id: number) {
   return apiRequest<Task>(`/api/v1/tasks/${id}`);
 }
 
+export function getTasks() {
+  return apiRequest<Task[]>("/api/v1/tasks");
+}
+
 export function completeTask(id: number) {
   return apiRequest<Task>(`/api/v1/tasks/${id}/complete`, { method: "POST" });
 }

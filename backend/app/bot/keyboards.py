@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, WebAppInfo
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
@@ -104,6 +104,21 @@ def event_duration_keyboard() -> ReplyKeyboardMarkup:
 
 def manual_input_keyboard() -> ReplyKeyboardMarkup:
     return build_reply_keyboard([[BACK_TEXT, CANCEL_TEXT]])
+
+
+def today_actions_keyboard(tasks, overdue_tasks) -> InlineKeyboardMarkup | None:
+    rows: list[list[InlineKeyboardButton]] = []
+    for task in [*tasks, *overdue_tasks]:
+        rows.append(
+            [
+                InlineKeyboardButton(text=f"#{task.id} Готово", callback_data=f"task:complete:{task.id}"),
+                InlineKeyboardButton(text="Перенести", callback_data=f"task:reschedule:{task.id}"),
+                InlineKeyboardButton(text="Удалить", callback_data=f"task:delete:{task.id}"),
+            ]
+        )
+    if not rows:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def task_actions_keyboard(task_id: int) -> InlineKeyboardMarkup:

@@ -4,26 +4,66 @@ from app.schemas.dashboard import TodayDashboard
 from app.schemas.settings import UserSettingsOut
 
 
+def format_task_time(task) -> str:
+    if task.due_time:
+        return task.due_time.strftime("%H:%M")
+    return ""
+
+
+def format_task_deadline(task) -> str:
+    if not task.due_date:
+        return ""
+    deadline = task.due_date.isoformat()
+    if task.due_time:
+        deadline += f" {task.due_time.strftime('%H:%M')}"
+    return deadline
+
+
 def render_today_dashboard(dashboard: TodayDashboard) -> str:
-    lines = [f"Сегодня: {dashboard.date.isoformat()}"]
+    lines = [f"Сегодня • {dashboard.date.isoformat()}"]
     if dashboard.next_event:
-        lines.append(f"Ближайшее событие: {dashboard.next_event.title} в {dashboard.next_event.start_time.strftime('%H:%M')}")
-    lines.append("")
-    lines.append(f"События: {len(dashboard.events)}")
-    lines.append(f"Задачи: {len(dashboard.tasks)}")
-    lines.append(f"Просрочено: {len(dashboard.overdue_tasks)}")
+        lines.append(f"Ближайшее: {dashboard.next_event.title} в {dashboard.next_event.start_time.strftime('%H:%M')}")
+
+    stats = [
+        f"События {len(dashboard.events)}",
+        f"Задачи {len(dashboard.tasks)}",
+        f"Просрочено {len(dashboard.overdue_tasks)}",
+    ]
     if dashboard.inbox_preview:
-        lines.append(f"Во входящих: {len(dashboard.inbox_preview)}")
+        stats.append(f"Входящие {len(dashboard.inbox_preview)}")
+    lines.append(" • ".join(stats))
+
+    if dashboard.events:
+        lines.append("")
+        lines.append("События")
+        for event in dashboard.events[:5]:
+            end_time = f"-{event.end_time.strftime('%H:%M')}" if event.end_time else ""
+            lines.append(f"• {event.start_time.strftime('%H:%M')}{end_time} {event.title}")
+
+    if dashboard.tasks:
+        lines.append("")
+        lines.append("Задачи")
+        for task in dashboard.tasks[:5]:
+            task_time = format_task_time(task)
+            suffix = f" • {task_time}" if task_time else ""
+            lines.append(f"• #{task.id} {task.title}{suffix}")
+
+    if dashboard.overdue_tasks:
+        lines.append("")
+        lines.append("Просроченные")
+        for task in dashboard.overdue_tasks[:5]:
+            lines.append(f"• #{task.id} {task.title} • {format_task_deadline(task)}")
+
+    if len(lines) == 2 and not dashboard.events and not dashboard.tasks and not dashboard.overdue_tasks:
+        lines.append("")
+        lines.append("На сегодня пусто.")
     return "\n".join(lines)
 
 
 def render_task(task) -> str:
-    due = ""
-    if task.due_date:
-        due = f" | до {task.due_date.isoformat()}"
-        if task.due_time:
-            due += f" {task.due_time.strftime('%H:%M')}"
-    return f"Задача #{task.id}: {task.title}{due}"
+    deadline = format_task_deadline(task)
+    suffix = f" | до {deadline}" if deadline else ""
+    return f"Задача #{task.id}: {task.title}{suffix}"
 
 
 def render_event(event) -> str:

@@ -145,6 +145,12 @@ p {
   border-top: 1px solid var(--line);
 }
 
+.list-meta {
+  min-width: 4.5rem;
+  text-align: right;
+  color: var(--muted);
+}
+
 .list-row:first-of-type {
   border-top: none;
   padding-top: 0;
@@ -157,6 +163,27 @@ p {
 .actions {
   flex-wrap: wrap;
   margin-top: 1rem;
+}
+
+.segment {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.45rem;
+  margin-bottom: 0.9rem;
+}
+
+.segment button {
+  min-height: 42px;
+  padding: 0.7rem 0.8rem;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.segment button.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: white;
+  border-color: transparent;
 }
 
 label {

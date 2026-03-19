@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { getTodayDashboard } from "../api/planner";
-import type { TodayDashboard } from "../api/types";
+import { getTasks, getTodayDashboard } from "../api/planner";
+import type { Task, TodayDashboard } from "../api/types";
 import { EmptyState, ErrorState, LoadingState } from "../components/States";
 import { usePageRefresh } from "../hooks/usePageRefresh";
 
 export function TodayPage() {
   const [data, setData] = useState<TodayDashboard | null>(null);
+  const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
+  const [taskTab, setTaskTab] = useState<"active" | "completed">("active");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,7 +18,13 @@ export function TodayPage() {
       setLoading(true);
     }
     try {
-      setData(await getTodayDashboard());
+      const [dashboard, tasks] = await Promise.all([getTodayDashboard(), getTasks()]);
+      setData(dashboard);
+      setCompletedTasks(
+        tasks
+          .filter((task) => task.status === "completed")
+          .sort((left, right) => (right.completed_at ?? "").localeCompare(left.completed_at ?? "")),
+      );
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -56,7 +64,7 @@ export function TodayPage() {
           data.events.map((event) => (
             <Link key={event.id} to={`/events/${event.id}`} className="list-row">
               <strong>{event.title}</strong>
-              <span>{event.start_time.slice(0, 5)}</span>
+              <span className="list-meta">{event.start_time.slice(0, 5)}</span>
             </Link>
           ))
         )}
@@ -65,15 +73,34 @@ export function TodayPage() {
       <section className="card">
         <div className="section-head">
           <h3>Задачи</h3>
-          <span>{data.tasks.length}</span>
+          <span>{taskTab === "active" ? data.tasks.length : completedTasks.length}</span>
         </div>
-        {data.tasks.length === 0 ? (
-          <EmptyState>На сегодня задач нет.</EmptyState>
+        <div className="segment">
+          <button type="button" className={taskTab === "active" ? "active" : ""} onClick={() => setTaskTab("active")}>
+            На сегодня
+          </button>
+          <button type="button" className={taskTab === "completed" ? "active" : ""} onClick={() => setTaskTab("completed")}>
+            Выполненные
+          </button>
+        </div>
+        {taskTab === "active" ? (
+          data.tasks.length === 0 ? (
+            <EmptyState>На сегодня задач нет.</EmptyState>
+          ) : (
+            data.tasks.map((task) => (
+              <Link key={`task-${task.id}`} to={`/tasks/${task.id}`} className="list-row">
+                <strong>{task.title}</strong>
+                <span className="list-meta">{task.due_time ? task.due_time.slice(0, 5) : "\u00A0"}</span>
+              </Link>
+            ))
+          )
+        ) : completedTasks.length === 0 ? (
+          <EmptyState>Выполненных задач пока нет.</EmptyState>
         ) : (
-          data.tasks.map((task) => (
-            <Link key={task.id} to={`/tasks/${task.id}`} className="list-row">
+          completedTasks.map((task) => (
+            <Link key={`completed-${task.id}`} to={`/tasks/${task.id}`} className="list-row">
               <strong>{task.title}</strong>
-              <span>{task.due_time ? task.due_time.slice(0, 5) : "без времени"}</span>
+              <span className="list-meta">{task.completed_at ? task.completed_at.slice(0, 10) : "\u00A0"}</span>
             </Link>
           ))
         )}
@@ -90,7 +117,7 @@ export function TodayPage() {
           data.overdue_tasks.map((task) => (
             <Link key={task.id} to={`/tasks/${task.id}`} className="list-row danger-row">
               <strong>{task.title}</strong>
-              <span>{task.due_date}</span>
+              <span className="list-meta">{task.due_date}</span>
             </Link>
           ))
         )}

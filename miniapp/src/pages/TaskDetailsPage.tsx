@@ -9,7 +9,8 @@ export function TaskDetailsPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
   const [task, setTask] = useState<Task | null>(null);
-  const [schedule, setSchedule] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [dueTime, setDueTime] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -18,7 +19,8 @@ export function TaskDetailsPage() {
     getTask(Number(taskId))
       .then((data) => {
         setTask(data);
-        setSchedule(data.due_date && data.due_time ? `${data.due_date}T${data.due_time.slice(0, 5)}` : "");
+        setDueDate(data.due_date ?? "");
+        setDueTime(data.due_time ? data.due_time.slice(0, 5) : "");
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
@@ -27,9 +29,10 @@ export function TaskDetailsPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!taskId) return;
-    const [dueDate, dueTime] = schedule ? schedule.split("T") : [null, null];
-    const updated = await rescheduleTask(Number(taskId), dueDate, dueTime ? `${dueTime}:00` : null);
+    const updated = await rescheduleTask(Number(taskId), dueDate || null, dueTime ? `${dueTime}:00` : null);
     setTask(updated);
+    setDueDate(updated.due_date ?? "");
+    setDueTime(updated.due_time ? updated.due_time.slice(0, 5) : "");
   }
 
   if (loading) return <LoadingState />;
@@ -46,10 +49,19 @@ export function TaskDetailsPage() {
       <section className="card">
         <form className="stack compact" onSubmit={submit}>
           <label>
-            Новый срок
-            <input type="datetime-local" value={schedule} onChange={(event) => setSchedule(event.target.value)} />
+            Дата
+            <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
           </label>
-          <button type="submit">Перенести</button>
+          <label>
+            Время
+            <input type="time" value={dueTime} onChange={(event) => setDueTime(event.target.value)} />
+          </label>
+          <div className="actions">
+            <button type="submit">Перенести</button>
+            <button type="button" className="ghost" onClick={() => setDueTime("")}>
+              Без времени
+            </button>
+          </div>
         </form>
       </section>
       <section className="actions">

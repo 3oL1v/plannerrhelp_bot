@@ -15,7 +15,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, BotCommandScopeAllPrivateChats, CallbackQuery, MenuButtonCommands, MenuButtonWebApp, Message, Update, WebAppInfo
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.bot.formatters import help_text, render_event, render_inbox, render_settings, render_task, render_today_dashboard
+from app.bot.formatters import help_text, render_inbox, render_settings, render_today_dashboard
 from app.bot.keyboards import (
     BACK_TEXT,
     CANCEL_TEXT,
@@ -30,7 +30,6 @@ from app.bot.keyboards import (
     TODAY_TEXT,
     TOMORROW_TEXT,
     add_menu_keyboard,
-    event_actions_keyboard,
     event_date_keyboard,
     event_duration_keyboard,
     event_time_keyboard,
@@ -38,7 +37,7 @@ from app.bot.keyboards import (
     main_menu_keyboard,
     manual_input_keyboard,
     settings_keyboard,
-    task_actions_keyboard,
+    today_actions_keyboard,
     task_date_keyboard,
     task_time_keyboard,
 )
@@ -263,13 +262,8 @@ def build_router(settings: Settings, session_factory: async_sessionmaker[AsyncSe
     async def send_today(message: Message, user_id: int) -> None:
         async with session_factory() as session:
             dashboard = await build_today_dashboard(session, user_id)
-        await message.answer(render_today_dashboard(dashboard), reply_markup=menu_keyboard())
-        for event in dashboard.events[:5]:
-            await message.answer(render_event(event), reply_markup=event_actions_keyboard(event.id))
-        for task in dashboard.tasks[:5]:
-            await message.answer(render_task(task), reply_markup=task_actions_keyboard(task.id))
-        for task in dashboard.overdue_tasks[:5]:
-            await message.answer(f"Просрочено: {render_task(task)}", reply_markup=task_actions_keyboard(task.id))
+        action_keyboard = today_actions_keyboard(dashboard.tasks[:5], dashboard.overdue_tasks[:5])
+        await message.answer(render_today_dashboard(dashboard), reply_markup=action_keyboard)
 
     async def prompt_task_title(message: Message) -> None:
         await message.answer("Как назвать задачу?", reply_markup=flow_cancel_keyboard())
