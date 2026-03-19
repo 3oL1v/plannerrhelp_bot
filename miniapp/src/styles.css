@@ -40,12 +40,21 @@ button {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: white;
   border: none;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    box-shadow 180ms ease,
+    filter 180ms ease,
+    opacity 180ms ease;
+  box-shadow: 0 10px 22px rgba(188, 95, 31, 0.18);
+  -webkit-tap-highlight-color: transparent;
 }
 
 button.ghost {
   background: transparent;
   color: var(--danger);
   border: 1px solid rgba(168, 58, 58, 0.25);
+  box-shadow: none;
 }
 
 textarea,
@@ -214,11 +223,44 @@ label {
   color: rgba(255, 243, 229, 0.72);
   border-radius: 18px;
   font-size: 0.84rem;
+  transition:
+    transform 140ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .bottom-nav a.active {
   background: rgba(255, 255, 255, 0.12);
   color: white;
+}
+
+button:active,
+.bottom-nav a:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+@media (hover: hover) {
+  button:hover,
+  .bottom-nav a:hover {
+    transform: translateY(-1px);
+  }
+
+  button:hover {
+    box-shadow: 0 14px 28px rgba(188, 95, 31, 0.22);
+    filter: saturate(1.04);
+  }
+
+  button.ghost:hover {
+    box-shadow: 0 10px 20px rgba(168, 58, 58, 0.08);
+    background: rgba(168, 58, 58, 0.04);
+  }
+
+  .bottom-nav a:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+  }
 }
 
 @media (min-width: 720px) {

@@ -17,7 +17,11 @@ from app.utils.datetime import today_in_timezone, utc_now
 async def list_inbox(session: AsyncSession, user_id: int) -> list[InboxItem]:
     result = await session.execute(
         select(InboxItem)
-        .where(InboxItem.user_id == user_id, InboxItem.deleted_at.is_(None))
+        .where(
+            InboxItem.user_id == user_id,
+            InboxItem.deleted_at.is_(None),
+            InboxItem.status == InboxStatus.ACTIVE.value,
+        )
         .order_by(InboxItem.created_at.desc())
     )
     return list(result.scalars().all())

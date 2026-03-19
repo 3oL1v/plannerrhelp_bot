@@ -106,7 +106,7 @@ def today_actions_keyboard(tasks, overdue_tasks) -> InlineKeyboardMarkup | None:
     for task in [*tasks, *overdue_tasks]:
         rows.append(
             [
-                InlineKeyboardButton(text=f"#{task.id} Готово", callback_data=f"task:complete:{task.id}"),
+                InlineKeyboardButton(text="Готово", callback_data=f"task:complete:{task.id}"),
                 InlineKeyboardButton(text="Перенести", callback_data=f"task:reschedule:{task.id}"),
                 InlineKeyboardButton(text="Удалить", callback_data=f"task:delete:{task.id}"),
             ]

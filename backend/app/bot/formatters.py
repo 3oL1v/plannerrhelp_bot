@@ -46,13 +46,13 @@ def render_today_dashboard(dashboard: TodayDashboard) -> str:
         for task in dashboard.tasks[:5]:
             task_time = format_task_time(task)
             suffix = f" • {task_time}" if task_time else ""
-            lines.append(f"• #{task.id} {task.title}{suffix}")
+            lines.append(f"• {task.title}{suffix}")
 
     if dashboard.overdue_tasks:
         lines.append("")
         lines.append("Просроченные")
         for task in dashboard.overdue_tasks[:5]:
-            lines.append(f"• #{task.id} {task.title} • {format_task_deadline(task)}")
+            lines.append(f"• {task.title} • {format_task_deadline(task)}")
 
     if len(lines) == 2 and not dashboard.events and not dashboard.tasks and not dashboard.overdue_tasks:
         lines.append("")
