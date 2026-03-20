@@ -105,6 +105,21 @@ class BotApplication:
                 tasks_message_id=view.tasks_message_id,
             )
 
+    async def clear_today_slots(self, user_id: int, chat_id: int) -> None:
+        view = self.get_chat_view(chat_id)
+        view.summary_message_id = None
+        view.events_message_id = None
+        view.tasks_message_id = None
+        async with self.session_factory() as session:
+            await persist_bot_today_slots(
+                session,
+                user_id,
+                chat_id=chat_id,
+                summary_message_id=None,
+                events_message_id=None,
+                tasks_message_id=None,
+            )
+
     async def start(self) -> None:
         if not self.bot or not self.dispatcher:
             return
@@ -318,6 +333,10 @@ class BotApplication:
         )
         await self.persist_today_slots(user_id, chat_id)
 
+    async def force_reseed_today_view(self, chat_id: int, user_id: int) -> None:
+        await self.clear_today_slots(user_id, chat_id)
+        await self.refresh_today_view(chat_id, user_id)
+
     async def refresh_today_view(self, chat_id: int, user_id: int) -> None:
         await self.load_persisted_today_slots(user_id, chat_id)
         view = self.get_chat_view(chat_id)
@@ -471,19 +490,40 @@ def build_router(bot_app: BotApplication) -> Router:
 
     @router.message(CommandStart())
     async def start_handler(message: Message) -> None:
-        user = await ensure_message_user(message)
-        notice = await message.answer("Обновляю блоки…")
+        notice: Message | None = None
         try:
-            await bot_app.refresh_today_view(message.chat.id, user.id)
+            user = await ensure_message_user(message)
+            notice = await message.answer("Обновляю блоки...")
+            reseeded = False
+            try:
+                await bot_app.refresh_today_view(message.chat.id, user.id)
+                view = bot_app.get_chat_view(message.chat.id)
+                if not (view.summary_message_id and view.events_message_id and view.tasks_message_id):
+                    await bot_app.force_reseed_today_view(message.chat.id, user.id)
+                    reseeded = True
+            except Exception:
+                await bot_app.force_reseed_today_view(message.chat.id, user.id)
+                reseeded = True
             await bot_app.remove_legacy_keyboard(message.chat.id)
-            await notice.edit_text("Блоки обновлены выше ↑")
-            bot_app.schedule_message_cleanup(message.chat.id, [notice.message_id], delay_seconds=12)
+            if notice is not None:
+                await notice.edit_text("Блоки созданы заново" if reseeded else "Блоки обновлены")
+                bot_app.schedule_message_cleanup(message.chat.id, [notice.message_id], delay_seconds=20)
         except Exception:
-            with contextlib.suppress(TelegramBadRequest, TelegramNetworkError):
-                await notice.edit_text(
-                    "Не удалось обновить блоки. Открой Planner и проверь текущее состояние.",
-                    reply_markup=planner_handoff_keyboard(settings.effective_webapp_url),
-                )
+            fallback_text = "Не удалось показать блоки. Открой Planner и проверь текущее состояние."
+            if notice is not None:
+                with contextlib.suppress(TelegramBadRequest, TelegramNetworkError):
+                    await notice.edit_text(
+                        fallback_text,
+                        reply_markup=planner_handoff_keyboard(settings.effective_webapp_url),
+                    )
+                return
+            if bot_app.bot:
+                with contextlib.suppress(TelegramBadRequest, TelegramNetworkError):
+                    await bot_app.bot.send_message(
+                        chat_id=message.chat.id,
+                        text=fallback_text,
+                        reply_markup=planner_handoff_keyboard(settings.effective_webapp_url),
+                    )
 
     @router.message(F.text == LEGACY_TODAY_TEXT)
     async def legacy_today_handler(message: Message) -> None:
