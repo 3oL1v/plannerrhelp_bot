@@ -98,20 +98,20 @@ def render_today_events(dashboard: TodayDashboard) -> str:
 def render_today_tasks(dashboard: TodayDashboard, *, show_completed: bool = False) -> str:
     lines = ["🗂 Задачи"]
 
+    if dashboard.overdue_tasks:
+        overdue_lines = [build_task_line(task, overdue=True) for task in dashboard.overdue_tasks[:8]]
+        lines.extend(["", "<b>⚠️ Просрочено</b>", render_quote_block(overdue_lines)])
+
     active_lines = [build_task_line(task) for task in dashboard.tasks[:8]]
-    if not active_lines and not dashboard.overdue_tasks:
+    if not active_lines:
         active_lines = ["• Сегодня задач нет."]
 
     lines.extend(["", "<b>Текущие</b>", render_quote_block(active_lines)])
 
     if dashboard.completed_tasks:
-        lines.extend(["", f"<b>Выполненные сегодня: {len(dashboard.completed_tasks)}</b>"])
+        lines.extend(["", f"<i>✅ Выполнено сегодня: {len(dashboard.completed_tasks)}</i>"])
         if show_completed:
             completed_lines = [f"• ✅ {safe_text(task.title)}" for task in dashboard.completed_tasks[:8]]
-            lines.append(render_quote_block(completed_lines))
-
-    if dashboard.overdue_tasks:
-        overdue_lines = [build_task_line(task, overdue=True) for task in dashboard.overdue_tasks[:8]]
-        lines.extend(["", "<b>Просрочено</b>", render_quote_block(overdue_lines)])
+            lines.extend(["<b>Выполненные</b>", render_quote_block(completed_lines)])
 
     return "\n".join(lines)

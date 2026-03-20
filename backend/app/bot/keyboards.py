@@ -53,7 +53,8 @@ def today_tasks_keyboard(dashboard, *, show_completed: bool = False) -> InlineKe
     for task in dashboard.overdue_tasks[:8]:
         rows.append([InlineKeyboardButton(text=build_task_complete_label(task.title, overdue=True), callback_data=f"task:complete:{task.id}")])
     if dashboard.completed_tasks:
-        toggle_text = "Скрыть выполненные" if show_completed else "Показать выполненные"
+        completed_count = len(dashboard.completed_tasks)
+        toggle_text = "Скрыть выполненные" if show_completed else f"Показать выполненные ({completed_count})"
         rows.append([InlineKeyboardButton(text=toggle_text, callback_data="today:completed:toggle")])
         if show_completed:
             rows.append([InlineKeyboardButton(text="Очистить список выполненных", callback_data="today:completed:clear")])
