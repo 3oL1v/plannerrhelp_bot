@@ -58,19 +58,22 @@ export function getTask(id: number) {
   return apiRequest<Task>(`/api/v1/tasks/${id}`);
 }
 
-export function getTasks() {
-  return apiRequest<Task[]>("/api/v1/tasks");
+export function createTask(payload: { title: string; due_date?: string | null; due_time?: string | null }) {
+  return apiRequest<Task>("/api/v1/tasks", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateTask(id: number, payload: { title?: string; due_date?: string | null; due_time?: string | null; status?: string | null }) {
+  return apiRequest<Task>(`/api/v1/tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
 }
 
 export function completeTask(id: number) {
   return apiRequest<Task>(`/api/v1/tasks/${id}/complete`, { method: "POST" });
-}
-
-export function rescheduleTask(id: number, due_date: string | null, due_time: string | null) {
-  return apiRequest<Task>(`/api/v1/tasks/${id}/reschedule`, {
-    method: "POST",
-    body: JSON.stringify({ due_date, due_time })
-  });
 }
 
 export function deleteTask(id: number) {
@@ -81,10 +84,17 @@ export function getEvent(id: number) {
   return apiRequest<EventItem>(`/api/v1/events/${id}`);
 }
 
-export function rescheduleEvent(id: number, event_date: string, start_time: string) {
-  return apiRequest<EventItem>(`/api/v1/events/${id}/reschedule`, {
+export function createEvent(payload: { title: string; event_date: string; start_time: string }) {
+  return apiRequest<EventItem>("/api/v1/events", {
     method: "POST",
-    body: JSON.stringify({ event_date, start_time })
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateEvent(id: number, payload: { title?: string; event_date?: string; start_time?: string }) {
+  return apiRequest<EventItem>(`/api/v1/events/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
   });
 }
 

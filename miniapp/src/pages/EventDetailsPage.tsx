@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { deleteEvent, getEvent, rescheduleEvent } from "../api/planner";
+import { deleteEvent, getEvent, updateEvent } from "../api/planner";
 import type { EventItem } from "../api/types";
 import { ErrorState, LoadingState } from "../components/States";
 
@@ -10,8 +10,11 @@ export function EventDetailsPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [eventItem, setEventItem] = useState<EventItem | null>(null);
-  const [schedule, setSchedule] = useState("");
+  const [title, setTitle] = useState("");
+  const [eventDate, setEventDate] = useState("");
+  const [startTime, setStartTime] = useState("");
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const notice = typeof (location.state as { notice?: string } | null)?.notice === "string"
     ? (location.state as { notice?: string }).notice
@@ -22,7 +25,9 @@ export function EventDetailsPage() {
     getEvent(Number(eventId))
       .then((data) => {
         setEventItem(data);
-        setSchedule(`${data.event_date}T${data.start_time.slice(0, 5)}`);
+        setTitle(data.title);
+        setEventDate(data.event_date);
+        setStartTime(data.start_time.slice(0, 5));
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
@@ -30,10 +35,24 @@ export function EventDetailsPage() {
 
   async function submit(formEvent: FormEvent) {
     formEvent.preventDefault();
-    if (!eventId) return;
-    const [eventDate, startTime] = schedule.split("T");
-    const updated = await rescheduleEvent(Number(eventId), eventDate, `${startTime}:00`);
-    setEventItem(updated);
+    if (!eventId || !eventItem) return;
+    setSaving(true);
+    try {
+      const updated = await updateEvent(Number(eventId), {
+        title: title.trim() || eventItem.title,
+        event_date: eventDate,
+        start_time: `${startTime}:00`,
+      });
+      setEventItem(updated);
+      setTitle(updated.title);
+      setEventDate(updated.event_date);
+      setStartTime(updated.start_time.slice(0, 5));
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loading) return <LoadingState />;
@@ -51,10 +70,21 @@ export function EventDetailsPage() {
       <section className="card">
         <form className="stack compact" onSubmit={submit}>
           <label>
-            Новый слот
-            <input type="datetime-local" value={schedule} onChange={(event) => setSchedule(event.target.value)} />
+            Название
+            <input type="text" value={title} onChange={(event) => setTitle(event.target.value)} />
           </label>
-          <button type="submit">Перенести</button>
+          <label>
+            Дата
+            <input type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} />
+          </label>
+          <label>
+            Время
+            <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+          </label>
+          <div className="actions">
+            <button type="submit" disabled={saving}>Применить</button>
+            <button type="button" className="ghost" onClick={() => navigate(-1)}>Назад</button>
+          </div>
         </form>
       </section>
       <section className="actions">

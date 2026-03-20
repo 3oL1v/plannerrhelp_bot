@@ -1,14 +1,25 @@
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { clearTodayCompletedList, getTodayDashboard } from "../api/planner";
+import { clearTodayCompletedList, createEvent, createTask, getTodayDashboard } from "../api/planner";
 import type { TodayDashboard } from "../api/types";
 import { EmptyState, ErrorState, LoadingState } from "../components/States";
 import { usePageRefresh } from "../hooks/usePageRefresh";
 
+function localDateInputValue() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 10);
+}
+
 export function TodayPage() {
   const [data, setData] = useState<TodayDashboard | null>(null);
   const [taskTab, setTaskTab] = useState<"active" | "completed">("active");
+  const [draftType, setDraftType] = useState<"task" | "event">("task");
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftDate, setDraftDate] = useState(localDateInputValue());
+  const [draftTime, setDraftTime] = useState("");
+  const [submittingDraft, setSubmittingDraft] = useState(false);
   const [clearingCompleted, setClearingCompleted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +46,49 @@ export function TodayPage() {
   }, [load]);
 
   usePageRefresh(() => load(false), 5000);
+
+  function resetDraft() {
+    setDraftTitle("");
+    setDraftDate(localDateInputValue());
+    setDraftTime("");
+    setDraftType("task");
+  }
+
+  async function onCreate(event: FormEvent) {
+    event.preventDefault();
+    const title = draftTitle.trim();
+    if (!title) {
+      setError("Добавь название.");
+      return;
+    }
+    if (draftType === "event" && (!draftDate || !draftTime)) {
+      setError("Для события нужны дата и время.");
+      return;
+    }
+
+    setSubmittingDraft(true);
+    try {
+      if (draftType === "task") {
+        await createTask({
+          title,
+          due_date: draftDate || null,
+          due_time: draftTime ? `${draftTime}:00` : null,
+        });
+      } else {
+        await createEvent({
+          title,
+          event_date: draftDate,
+          start_time: `${draftTime}:00`,
+        });
+      }
+      resetDraft();
+      await load(false);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSubmittingDraft(false);
+    }
+  }
 
   async function onClearCompleted() {
     setClearingCompleted(true);
@@ -64,16 +118,56 @@ export function TodayPage() {
 
       <section className="card">
         <div className="section-head">
+          <h3>Быстро добавить</h3>
+          <span>{draftType === "task" ? "Задача" : "Событие"}</span>
+        </div>
+        <div className="segment">
+          <button type="button" className={draftType === "task" ? "active" : ""} onClick={() => setDraftType("task")}>
+            Задача
+          </button>
+          <button type="button" className={draftType === "event" ? "active" : ""} onClick={() => setDraftType("event")}>
+            Событие
+          </button>
+        </div>
+        <form className="stack compact" onSubmit={onCreate}>
+          <label>
+            Название
+            <input type="text" value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} placeholder="Что нужно сделать?" />
+          </label>
+          <div className="field-grid">
+            <label>
+              Дата
+              <input type="date" value={draftDate} onChange={(event) => setDraftDate(event.target.value)} />
+            </label>
+            <label>
+              Время
+              <input type="time" value={draftTime} onChange={(event) => setDraftTime(event.target.value)} required={draftType === "event"} />
+            </label>
+          </div>
+          {draftType === "task" ? <p className="muted-text">Время для задачи можно оставить пустым.</p> : null}
+          <div className="actions">
+            <button type="submit" disabled={submittingDraft}>
+              {draftType === "task" ? "Добавить задачу" : "Добавить событие"}
+            </button>
+            <button type="button" className="ghost" disabled={submittingDraft} onClick={resetDraft}>
+              Сбросить
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="card">
+        <div className="section-head">
           <h3>События</h3>
           <span>{data.events.length}</span>
         </div>
         {data.events.length === 0 ? (
           <EmptyState>На сегодня событий нет.</EmptyState>
         ) : (
-          data.events.map((event) => (
-            <Link key={event.id} to={`/events/${event.id}`} className="list-row">
-              <strong>{event.title}</strong>
-              <span className="list-meta">{event.start_time.slice(0, 5)}</span>
+          data.events.map((eventItem) => (
+            <Link key={eventItem.id} to={`/events/${eventItem.id}`} className="list-row">
+              <strong>{eventItem.title}</strong>
+              <span className="list-meta">{eventItem.start_time.slice(0, 5)}</span>
             </Link>
           ))
         )}
@@ -109,13 +203,13 @@ export function TodayPage() {
         ) : (
           <div className="stack compact">
             {data.completed_tasks.map((task) => (
-              <Link key={`completed-${task.id}`} to={`/tasks/${task.id}`} className="list-row completed-row">
+              <div key={`completed-${task.id}`} className="list-row completed-row readonly-row">
                 <strong>✅ {task.title}</strong>
-              </Link>
+              </div>
             ))}
             <div className="actions compact-actions completed-footer">
               <button type="button" className="ghost" disabled={clearingCompleted} onClick={() => void onClearCompleted()}>
-                Очистить список
+                Очистить список выполненных
               </button>
             </div>
           </div>

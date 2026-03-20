@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -24,11 +24,13 @@ async def cancel_entity_reminders(session: AsyncSession, user_id: int, entity_ty
 
 async def sync_task_reminder(session: AsyncSession, task: Task, user_settings: UserSettings) -> None:
     await cancel_entity_reminders(session, task.user_id, ReminderEntityType.TASK.value, task.id)
-    if task.deleted_at or task.status != "open" or task.due_date is None:
+    if task.deleted_at or task.status != "open" or task.due_date is None or task.due_time is None:
         return
     remind_at = combine_user_datetime(task.due_date, task.due_time, user_settings.timezone)
     remind_at = remind_at.replace(second=0, microsecond=0)
     remind_at = remind_at - timedelta(minutes=user_settings.default_reminder_minutes)
+    if remind_at <= utc_now():
+        return
     session.add(
         Reminder(
             user_id=task.user_id,
@@ -47,6 +49,8 @@ async def sync_event_reminder(session: AsyncSession, event: Event, user_settings
     remind_at = combine_user_datetime(event.event_date, event.start_time, user_settings.timezone)
     remind_at = remind_at.replace(second=0, microsecond=0)
     remind_at = remind_at - timedelta(minutes=user_settings.default_reminder_minutes)
+    if remind_at <= utc_now():
+        return
     session.add(
         Reminder(
             user_id=event.user_id,
@@ -60,7 +64,7 @@ async def sync_event_reminder(session: AsyncSession, event: Event, user_settings
 
 async def dispatch_due_reminders(
     session_factory: async_sessionmaker[AsyncSession],
-    send_message,
+    send_reminder_message,
 ) -> None:
     async with session_factory() as session:
         now = utc_now()
@@ -77,7 +81,12 @@ async def dispatch_due_reminders(
                 continue
             text = await build_reminder_text(session, reminder)
             if text:
-                await send_message(user.telegram_id, text)
+                await send_reminder_message(
+                    user.telegram_id,
+                    entity_type=reminder.entity_type,
+                    entity_id=reminder.entity_id,
+                    text=text,
+                )
                 reminder.status = ReminderStatus.SENT.value
                 reminder.sent_at = now
             else:

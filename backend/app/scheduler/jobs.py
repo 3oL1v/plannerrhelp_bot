@@ -10,13 +10,14 @@ from app.services.reminders import dispatch_due_reminders, dispatch_morning_dige
 def create_scheduler(
     session_factory: async_sessionmaker[AsyncSession],
     send_message,
+    send_reminder_message,
 ) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
         dispatch_due_reminders,
         "interval",
         seconds=60,
-        kwargs={"session_factory": session_factory, "send_message": send_message},
+        kwargs={"session_factory": session_factory, "send_reminder_message": send_reminder_message},
     )
     scheduler.add_job(
         dispatch_morning_digests,

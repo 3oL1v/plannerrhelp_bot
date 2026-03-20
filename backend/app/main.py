@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     scheduler = None
     await bot_app.start()
     if settings.enable_scheduler:
-        scheduler = create_scheduler(session_factory, bot_app.send_message)
+        scheduler = create_scheduler(session_factory, bot_app.send_message, bot_app.send_reminder_message)
         scheduler.start()
     app.state.scheduler = scheduler
     yield

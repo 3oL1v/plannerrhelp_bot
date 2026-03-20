@@ -3,7 +3,6 @@ from __future__ import annotations
 from html import escape
 
 from app.schemas.dashboard import TodayDashboard
-from app.schemas.settings import UserSettingsOut
 
 
 MONTHS_RU = {
@@ -34,7 +33,7 @@ def format_pretty_time(value) -> str:
     return value.strftime("%H:%M")
 
 
-def build_task_line(task, *, overdue: bool = False, completed: bool = False) -> str:
+def build_task_line(task, *, overdue: bool = False) -> str:
     prefix = ""
     if overdue and task.due_date:
         prefix = format_pretty_date(task.due_date)
@@ -44,10 +43,7 @@ def build_task_line(task, *, overdue: bool = False, completed: bool = False) -> 
         prefix = format_pretty_time(task.due_time)
 
     text = safe_text(task.title)
-    line = f"• {prefix} — {text}" if prefix else f"• {text}"
-    if completed:
-        return f"<s>{line}</s>"
-    return line
+    return f"• {prefix} — {text}" if prefix else f"• {text}"
 
 
 def render_today_dashboard(dashboard: TodayDashboard) -> str:
@@ -117,17 +113,3 @@ def render_today_tasks(dashboard: TodayDashboard, *, show_completed: bool = Fals
         lines.append("Сегодня задач нет.")
 
     return "\n".join(lines)
-
-
-def render_planner_handoff(title: str, body: str) -> str:
-    return "\n".join([safe_text(title), safe_text(body)])
-
-
-def render_settings(settings: UserSettingsOut) -> str:
-    return (
-        f"⚙️ Настройки\n"
-        f"Часовой пояс: {settings.timezone}\n"
-        f"Утренняя сводка: {'вкл' if settings.morning_digest_enabled else 'выкл'} в {settings.morning_digest_time.strftime('%H:%M')}\n"
-        f"Напоминания: {'вкл' if settings.notifications_enabled else 'выкл'}\n"
-        f"Напоминание по умолчанию: {settings.default_reminder_minutes} мин"
-    )

@@ -25,7 +25,6 @@ export default function App() {
         <Route path="/tasks/:taskId" element={<TaskDetailsPage />} />
         <Route path="/events/:eventId" element={<EventDetailsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/more" element={<Navigate to="/settings" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
