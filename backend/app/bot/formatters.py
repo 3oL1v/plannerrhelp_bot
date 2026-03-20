@@ -46,6 +46,11 @@ def build_task_line(task, *, overdue: bool = False) -> str:
     return f"• {prefix} — {text}" if prefix else f"• {text}"
 
 
+def render_quote_block(lines: list[str]) -> str:
+    body = "\n".join(lines) if lines else "• Пусто"
+    return f"<blockquote>{body}</blockquote>"
+
+
 def render_today_dashboard(dashboard: TodayDashboard) -> str:
     lines = ["✨ План на сегодня", format_pretty_date(dashboard.date), ""]
 
@@ -93,23 +98,20 @@ def render_today_events(dashboard: TodayDashboard) -> str:
 def render_today_tasks(dashboard: TodayDashboard, *, show_completed: bool = False) -> str:
     lines = ["🗂 Задачи"]
 
-    if dashboard.tasks:
-        lines.extend(build_task_line(task) for task in dashboard.tasks[:8])
+    active_lines = [build_task_line(task) for task in dashboard.tasks[:8]]
+    if not active_lines and not dashboard.overdue_tasks:
+        active_lines = ["• Сегодня задач нет."]
+
+    lines.extend(["", "<b>Текущие</b>", render_quote_block(active_lines)])
 
     if dashboard.completed_tasks:
-        if len(lines) > 1:
-            lines.append("")
-        lines.append(f"✅ Выполнено сегодня: {len(dashboard.completed_tasks)}")
+        lines.extend(["", f"<b>Выполненные сегодня: {len(dashboard.completed_tasks)}</b>"])
         if show_completed:
-            lines.extend(f"• ✅ {safe_text(task.title)}" for task in dashboard.completed_tasks[:8])
+            completed_lines = [f"• ✅ {safe_text(task.title)}" for task in dashboard.completed_tasks[:8]]
+            lines.append(render_quote_block(completed_lines))
 
     if dashboard.overdue_tasks:
-        if len(lines) > 1:
-            lines.append("")
-        lines.append("⚠️ Просрочено")
-        lines.extend(build_task_line(task, overdue=True) for task in dashboard.overdue_tasks[:8])
-
-    if len(lines) == 1:
-        lines.append("Сегодня задач нет.")
+        overdue_lines = [build_task_line(task, overdue=True) for task in dashboard.overdue_tasks[:8]]
+        lines.extend(["", "<b>Просрочено</b>", render_quote_block(overdue_lines)])
 
     return "\n".join(lines)
