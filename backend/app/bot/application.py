@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.bot.formatters import render_today_dashboard, render_today_events, render_today_tasks
 from app.bot.keyboards import MENU_PLANNER_TEXT, planner_handoff_keyboard, reminder_event_keyboard, reminder_task_keyboard, today_tasks_keyboard
 from app.config import Settings
+from app.schemas.inbox import InboxCreate
 from app.services.dashboard import build_today_dashboard
 from app.services.inbox import create_inbox_item
 from app.services.settings import clear_today_completed_for_user, get_settings_for_user, persist_bot_today_slots
@@ -608,7 +609,7 @@ def build_router(bot_app: BotApplication) -> Router:
             return
         user = await ensure_message_user(message)
         async with session_factory() as session:
-            await create_inbox_item(session, user.id, payload={"text": text})
+            await create_inbox_item(session, user.id, payload=InboxCreate(text=text))
         response = await message.answer("Заметка добавлена")
         bot_app.schedule_message_cleanup(message.chat.id, [message.message_id, response.message_id], delay_seconds=8)
 
