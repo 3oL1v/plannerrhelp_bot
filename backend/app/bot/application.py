@@ -523,20 +523,11 @@ def build_router(bot_app: BotApplication) -> Router:
         logger.warning("start handler chat_id=%s telegram_id=%s", message.chat.id, message.from_user.id if message.from_user else None)
         try:
             user = await ensure_message_user(message)
-            notice = await message.answer("Обновляю блоки...")
-            reseeded = False
-            try:
-                await bot_app.refresh_today_view(message.chat.id, user.id)
-                view = bot_app.get_chat_view(message.chat.id)
-                if not (view.summary_message_id and view.events_message_id and view.tasks_message_id):
-                    await bot_app.force_reseed_today_view(message.chat.id, user.id)
-                    reseeded = True
-            except Exception:
-                await bot_app.force_reseed_today_view(message.chat.id, user.id)
-                reseeded = True
+            notice = await message.answer("Создаю блоки...")
+            await bot_app.force_reseed_today_view(message.chat.id, user.id)
             await bot_app.remove_legacy_keyboard(message.chat.id)
             if notice is not None:
-                await notice.edit_text("Блоки созданы заново" if reseeded else "Блоки обновлены")
+                await notice.edit_text("Блоки созданы заново")
                 bot_app.schedule_message_cleanup(message.chat.id, [notice.message_id], delay_seconds=20)
         except Exception:
             logger.exception("start handler failed chat_id=%s", message.chat.id)
