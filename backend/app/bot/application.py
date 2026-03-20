@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import contextlib
 import re
 from dataclasses import dataclass, field
@@ -41,6 +42,7 @@ LEGACY_TODAY_TEXT = "Сегодня"
 LEGACY_ADD_TEXT = "+"
 LEGACY_PLANNER_TEXTS = {MENU_PLANNER_TEXT, "✨ Planner", "Planner"}
 HTML_TAG_RE = re.compile(r"<[^>]+>")
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -153,6 +155,12 @@ class BotApplication:
     async def process_update(self, update: Update) -> None:
         if not self.bot or not self.dispatcher:
             return
+        logger.warning(
+            "process_update update_id=%s has_message=%s has_callback=%s",
+            update.update_id,
+            update.message is not None,
+            update.callback_query is not None,
+        )
         await self.dispatcher.feed_update(self.bot, update)
 
     async def send_message(self, telegram_id: int, text: str, reply_markup: InlineKeyboardMarkup | None = None) -> None:
@@ -276,14 +284,17 @@ class BotApplication:
     async def _send_summary_slot(self, chat_id: int, text: str, reply_markup: InlineKeyboardMarkup | None) -> None:
         sent = await self._send_slot_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
         self.get_chat_view(chat_id).summary_message_id = sent.message_id
+        logger.warning("sent summary slot chat_id=%s message_id=%s", chat_id, sent.message_id)
 
     async def _send_events_slot(self, chat_id: int, text: str) -> None:
         sent = await self._send_slot_message(chat_id=chat_id, text=text)
         self.get_chat_view(chat_id).events_message_id = sent.message_id
+        logger.warning("sent events slot chat_id=%s message_id=%s", chat_id, sent.message_id)
 
     async def _send_tasks_slot(self, chat_id: int, text: str, reply_markup: InlineKeyboardMarkup | None) -> None:
         sent = await self._send_slot_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
         self.get_chat_view(chat_id).tasks_message_id = sent.message_id
+        logger.warning("sent tasks slot chat_id=%s message_id=%s", chat_id, sent.message_id)
 
     async def _send_today_trio(
         self,
@@ -321,6 +332,7 @@ class BotApplication:
         tasks_text: str,
         tasks_markup: InlineKeyboardMarkup | None,
     ) -> None:
+        logger.warning("recreate today trio chat_id=%s user_id=%s", chat_id, user_id)
         await self.delete_slot(chat_id, "summary_message_id")
         await self.delete_slot(chat_id, "events_message_id")
         await self.delete_slot(chat_id, "tasks_message_id")
@@ -341,6 +353,14 @@ class BotApplication:
     async def refresh_today_view(self, chat_id: int, user_id: int) -> None:
         await self.load_persisted_today_slots(user_id, chat_id)
         view = self.get_chat_view(chat_id)
+        logger.warning(
+            "refresh today start chat_id=%s user_id=%s slots=%s/%s/%s",
+            chat_id,
+            user_id,
+            view.summary_message_id,
+            view.events_message_id,
+            view.tasks_message_id,
+        )
 
         async with self.session_factory() as session:
             dashboard = await build_today_dashboard(session, user_id)
@@ -413,6 +433,14 @@ class BotApplication:
             return
 
         await self.persist_today_slots(user_id, chat_id)
+        logger.warning(
+            "refresh today complete chat_id=%s user_id=%s slots=%s/%s/%s",
+            chat_id,
+            user_id,
+            view.summary_message_id,
+            view.events_message_id,
+            view.tasks_message_id,
+        )
 
     async def _configure_production_bot(self) -> None:
         if not self.bot:
@@ -492,6 +520,7 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(CommandStart())
     async def start_handler(message: Message) -> None:
         notice: Message | None = None
+        logger.warning("start handler chat_id=%s telegram_id=%s", message.chat.id, message.from_user.id if message.from_user else None)
         try:
             user = await ensure_message_user(message)
             notice = await message.answer("Обновляю блоки...")
@@ -510,6 +539,7 @@ def build_router(bot_app: BotApplication) -> Router:
                 await notice.edit_text("Блоки созданы заново" if reseeded else "Блоки обновлены")
                 bot_app.schedule_message_cleanup(message.chat.id, [notice.message_id], delay_seconds=20)
         except Exception:
+            logger.exception("start handler failed chat_id=%s", message.chat.id)
             fallback_text = "Не удалось показать блоки. Открой Planner и проверь текущее состояние."
             if notice is not None:
                 with contextlib.suppress(TelegramBadRequest, TelegramNetworkError):
@@ -607,6 +637,7 @@ def build_router(bot_app: BotApplication) -> Router:
         text = message.text.strip()
         if not text:
             return
+        logger.warning("free text handler chat_id=%s text_len=%s", message.chat.id, len(text))
         user = await ensure_message_user(message)
         async with session_factory() as session:
             await create_inbox_item(session, user.id, payload=InboxCreate(text=text))
