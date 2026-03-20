@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -38,6 +39,7 @@ SlotStatus = Literal["ok", "missing"]
 LEGACY_TODAY_TEXT = "Сегодня"
 LEGACY_ADD_TEXT = "+"
 LEGACY_PLANNER_TEXTS = {MENU_PLANNER_TEXT, "✨ Planner", "Planner"}
+HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 @dataclass
@@ -195,6 +197,11 @@ class BotApplication:
             return
         self.schedule_message_cleanup(chat_id, [sent.message_id], delay_seconds=1.0)
 
+    @staticmethod
+    def _plain_text(text: str) -> str:
+        cleaned = HTML_TAG_RE.sub("", text)
+        return cleaned.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", '"')
+
     async def _edit_slot(
         self,
         chat_id: int,
@@ -216,26 +223,50 @@ class BotApplication:
         except TelegramBadRequest as exc:
             if "message is not modified" in str(exc).lower():
                 return "ok"
+            if "parse entities" in str(exc).lower():
+                try:
+                    await self.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=self._plain_text(text),
+                        reply_markup=reply_markup,
+                    )
+                    return "ok"
+                except (TelegramBadRequest, TelegramNetworkError):
+                    return "missing"
             return "missing"
         except TelegramNetworkError:
             return "ok"
 
-    async def _send_summary_slot(self, chat_id: int, text: str, reply_markup: InlineKeyboardMarkup | None) -> None:
+    async def _send_slot_message(
+        self,
+        chat_id: int,
+        text: str,
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> Message:
         if not self.bot:
-            return
-        sent = await self.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+            raise RuntimeError("Bot is not initialized")
+        try:
+            return await self.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+        except TelegramBadRequest as exc:
+            if "parse entities" not in str(exc).lower():
+                raise
+            return await self.bot.send_message(
+                chat_id=chat_id,
+                text=self._plain_text(text),
+                reply_markup=reply_markup,
+            )
+
+    async def _send_summary_slot(self, chat_id: int, text: str, reply_markup: InlineKeyboardMarkup | None) -> None:
+        sent = await self._send_slot_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
         self.get_chat_view(chat_id).summary_message_id = sent.message_id
 
     async def _send_events_slot(self, chat_id: int, text: str) -> None:
-        if not self.bot:
-            return
-        sent = await self.bot.send_message(chat_id=chat_id, text=text)
+        sent = await self._send_slot_message(chat_id=chat_id, text=text)
         self.get_chat_view(chat_id).events_message_id = sent.message_id
 
     async def _send_tasks_slot(self, chat_id: int, text: str, reply_markup: InlineKeyboardMarkup | None) -> None:
-        if not self.bot:
-            return
-        sent = await self.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+        sent = await self._send_slot_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
         self.get_chat_view(chat_id).tasks_message_id = sent.message_id
 
     async def _send_today_trio(
@@ -428,10 +459,18 @@ def build_router(bot_app: BotApplication) -> Router:
     @router.message(CommandStart())
     async def start_handler(message: Message) -> None:
         user = await ensure_message_user(message)
-        await bot_app.refresh_today_view(message.chat.id, user.id)
-        await bot_app.remove_legacy_keyboard(message.chat.id)
-        notice = await message.answer("Блоки обновлены выше ↑")
-        bot_app.schedule_message_cleanup(message.chat.id, [notice.message_id], delay_seconds=12)
+        notice = await message.answer("Обновляю блоки…")
+        try:
+            await bot_app.refresh_today_view(message.chat.id, user.id)
+            await bot_app.remove_legacy_keyboard(message.chat.id)
+            await notice.edit_text("Блоки обновлены выше ↑")
+            bot_app.schedule_message_cleanup(message.chat.id, [notice.message_id], delay_seconds=12)
+        except Exception:
+            with contextlib.suppress(TelegramBadRequest, TelegramNetworkError):
+                await notice.edit_text(
+                    "Не удалось обновить блоки. Открой Planner и проверь текущее состояние.",
+                    reply_markup=planner_handoff_keyboard(settings.effective_webapp_url),
+                )
 
     @router.message(F.text == LEGACY_TODAY_TEXT)
     async def legacy_today_handler(message: Message) -> None:
