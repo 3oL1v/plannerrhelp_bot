@@ -294,6 +294,30 @@ class BotApplication:
         await self._send_events_slot(chat_id, events_text)
         await self._send_tasks_slot(chat_id, tasks_text, tasks_markup)
 
+    async def _recreate_today_trio(
+        self,
+        chat_id: int,
+        user_id: int,
+        *,
+        summary_text: str,
+        summary_markup: InlineKeyboardMarkup | None,
+        events_text: str,
+        tasks_text: str,
+        tasks_markup: InlineKeyboardMarkup | None,
+    ) -> None:
+        await self.delete_slot(chat_id, "summary_message_id")
+        await self.delete_slot(chat_id, "events_message_id")
+        await self.delete_slot(chat_id, "tasks_message_id")
+        await self._send_today_trio(
+            chat_id,
+            summary_text=summary_text,
+            summary_markup=summary_markup,
+            events_text=events_text,
+            tasks_text=tasks_text,
+            tasks_markup=tasks_markup,
+        )
+        await self.persist_today_slots(user_id, chat_id)
+
     async def refresh_today_view(self, chat_id: int, user_id: int) -> None:
         await self.load_persisted_today_slots(user_id, chat_id)
         view = self.get_chat_view(chat_id)
@@ -307,16 +331,16 @@ class BotApplication:
         tasks_text = render_today_tasks(dashboard, show_completed=view.show_completed_tasks)
         tasks_markup = today_tasks_keyboard(dashboard, show_completed=view.show_completed_tasks)
 
-        if not view.summary_message_id:
-            await self._send_today_trio(
+        if not view.summary_message_id or not view.events_message_id or not view.tasks_message_id:
+            await self._recreate_today_trio(
                 chat_id,
+                user_id,
                 summary_text=summary_text,
                 summary_markup=summary_markup,
                 events_text=events_text,
                 tasks_text=tasks_text,
                 tasks_markup=tasks_markup,
             )
-            await self.persist_today_slots(user_id, chat_id)
             return
 
         summary_status = await self._edit_slot(
@@ -326,47 +350,28 @@ class BotApplication:
             reply_markup=summary_markup,
         )
         if summary_status == "missing":
-            view.summary_message_id = None
-            await self.delete_slot(chat_id, "events_message_id")
-            await self.delete_slot(chat_id, "tasks_message_id")
-            await self._send_today_trio(
+            await self._recreate_today_trio(
                 chat_id,
+                user_id,
                 summary_text=summary_text,
                 summary_markup=summary_markup,
                 events_text=events_text,
                 tasks_text=tasks_text,
                 tasks_markup=tasks_markup,
             )
-            await self.persist_today_slots(user_id, chat_id)
-            return
-
-        if not view.events_message_id:
-            await self.delete_slot(chat_id, "tasks_message_id")
-            await self._send_events_and_tasks(
-                chat_id,
-                events_text=events_text,
-                tasks_text=tasks_text,
-                tasks_markup=tasks_markup,
-            )
-            await self.persist_today_slots(user_id, chat_id)
             return
 
         events_status = await self._edit_slot(chat_id, view.events_message_id, events_text)
         if events_status == "missing":
-            view.events_message_id = None
-            await self.delete_slot(chat_id, "tasks_message_id")
-            await self._send_events_and_tasks(
+            await self._recreate_today_trio(
                 chat_id,
+                user_id,
+                summary_text=summary_text,
+                summary_markup=summary_markup,
                 events_text=events_text,
                 tasks_text=tasks_text,
                 tasks_markup=tasks_markup,
             )
-            await self.persist_today_slots(user_id, chat_id)
-            return
-
-        if not view.tasks_message_id:
-            await self._send_tasks_slot(chat_id, tasks_text, tasks_markup)
-            await self.persist_today_slots(user_id, chat_id)
             return
 
         tasks_status = await self._edit_slot(
@@ -376,8 +381,16 @@ class BotApplication:
             reply_markup=tasks_markup,
         )
         if tasks_status == "missing":
-            view.tasks_message_id = None
-            await self._send_tasks_slot(chat_id, tasks_text, tasks_markup)
+            await self._recreate_today_trio(
+                chat_id,
+                user_id,
+                summary_text=summary_text,
+                summary_markup=summary_markup,
+                events_text=events_text,
+                tasks_text=tasks_text,
+                tasks_markup=tasks_markup,
+            )
+            return
 
         await self.persist_today_slots(user_id, chat_id)
 
