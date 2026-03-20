@@ -430,6 +430,8 @@ def build_router(bot_app: BotApplication) -> Router:
         user = await ensure_message_user(message)
         await bot_app.refresh_today_view(message.chat.id, user.id)
         await bot_app.remove_legacy_keyboard(message.chat.id)
+        notice = await message.answer("Блоки обновлены выше")
+        bot_app.schedule_message_cleanup(message.chat.id, [notice.message_id], delay_seconds=4)
 
     @router.message(F.text == LEGACY_TODAY_TEXT)
     async def legacy_today_handler(message: Message) -> None:
